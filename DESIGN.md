@@ -33,10 +33,18 @@ Persistent, reused across trips. Food and driving-time preferences are account-l
 - **Hotel budget**: target per-night budget for multi-day trips
 - **Learned stop durations**: the app tracks actual time spent at each stop and builds personal averages over time, tracked per stop type (fuel / meal / rest / hotel check-in) and, within meal stops, per venue category (fast food / sit-down / coffee) since typical duration varies a lot by category. Early trips fall back to generic estimates until enough personal data accumulates; used to make schedule/deadline projections realistic instead of relying on generic assumptions.
 
+## Platforms & clients
+
+Two client surfaces share one backend and data model, split by use case rather than by feature-completeness:
+
+- **iOS app** — the on-the-road surface, used mostly for on-the-fly interaction while driving or stopped. Embedded turn-by-turn nav, missed-stop substitution notices, confirm-first prompts (skip a stop, exceed the driving-hours ceiling, switch fuel mode), the extend/shorten leg buttons, the fuel-range widget and quick-adjust, Siri Shortcut recalibration, and end-of-day summaries/alerts. Optimized for glanceable, low-friction, mostly-one-handed interaction.
+- **Web app** — the detailed planning surface, designed for mouse+keyboard on a large screen. This is where trip setup happens (destination, dates, deadline, vehicle, preference overrides), and it's what the end-of-day email's "plan tomorrow" link opens — letting the user pick among proposed meal options and adjust the next day's parameters with more room than a phone screen affords.
+- Both clients read/write the same trip, profile, and vehicle data via a shared backend, so a change made on the web (e.g. picking tomorrow's lunch stop) is reflected in the iOS app the next morning, and vice versa.
+
 ## Navigation architecture
 
 - **Embedded navigation SDK** (Google Navigation SDK or Mapbox Navigation SDK — both support iOS and Android) rather than deep-linking to Google/Apple Maps. Apple doesn't offer an embeddable turn-by-turn SDK to third parties, so embedding at all means picking Google or Mapbox regardless of phone OS. This choice is what allows dynamic waypoint insertion/reordering (fuel/meal/rest/hotel stops) mid-drive rather than only handing off a single fixed destination.
-- **Platform**: iOS first.
+- **Mobile platform**: iOS first.
 - Background location tracking runs independent of whichever screen is frontmost, which is what makes deadline tracking and "time to leave" alerts possible even while the embedded nav view is active.
 
 ## Fuel engine
@@ -106,4 +114,5 @@ Crossing a timezone must never cause the user to silently lose or gain an hour a
 - Whether return-leg stops for round trips are planned in full at trip setup or left to departure-time finalization on the return date.
 - iOS background-location permission constraints and how much they limit "time to leave" / schedule-tracking reliability while the phone is locked or another app (e.g. the embedded nav view) is frontmost.
 - Whether vehicle mpg should account for city vs. highway split dynamically based on detected driving context, or just use a single stored highway mpg value as a simplification.
-- Email delivery mechanism for the end-of-day checkpoint (transactional email provider), and what the linked "select next day's itinerary" web view needs (a lightweight authenticated web page, presumably, separate from the iOS app itself).
+- Email delivery mechanism for the end-of-day checkpoint (transactional email provider).
+- Whether the web app ships alongside the iOS app for MVP, or the iOS app launches first with next-day parameter selection handled in-app as a stopgap until the web app exists.
