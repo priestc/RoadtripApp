@@ -25,11 +25,11 @@ Gas prices are assumed static for the day once fetched at departure-time finaliz
 
 ## User profile
 
-Persistent, reused across trips:
+Persistent, reused across trips. Food and driving-time preferences are account-level defaults that get inherited into every new trip, but remain editable per trip (a trip-level override doesn't change the account default).
 
 - **Vehicles** (multiple supported, one selected per trip): fuel range, mpg (city/highway), tank capacity
 - **Meal preferences**: preferred time windows for breakfast/lunch/dinner, and preferred place type/cuisine per meal, editable per trip
-- **Driving comfort**: max comfortable driving hours per day; preferred stop frequency; earliest/latest comfortable departure time each day (default latest: 11am, typical hotel checkout time); earliest/latest comfortable stopping time each day (default earliest: 3pm, typical hotel check-in time; default latest: sunset)
+- **Driving comfort**: max comfortable driving hours per day; preferred stop frequency; earliest/latest comfortable departure time each day (default latest: 11am, typical hotel checkout time); earliest/latest comfortable stopping time each day (default earliest: 3pm, typical hotel check-in time; default latest: sunset) — editable per trip
 - **Hotel budget**: target per-night budget for multi-day trips
 - **Learned stop durations**: the app tracks actual time spent at each stop and builds personal averages over time, tracked per stop type (fuel / meal / rest / hotel check-in) and, within meal stops, per venue category (fast food / sit-down / coffee) since typical duration varies a lot by category. Early trips fall back to generic estimates until enough personal data accumulates; used to make schedule/deadline projections realistic instead of relying on generic assumptions.
 
@@ -86,6 +86,8 @@ On hard-deadline trips, the app actively tracks pace against the deadline (using
 
 - **Soft-target trips** (no hard deadline): the max-comfortable-driving-hours ceiling always wins. If proportional replanning would need to push a day's driving past that ceiling to stay on the original day-count, the app adds an extra day to the trip instead and re-divides across the new, larger number of days — trading a longer trip for comfortable days rather than forcing long catch-up days.
 - **Hard-deadline trips**: the day count is fixed by the deadline and can't be extended, so the max-comfortable-hours ceiling can't always be honored this way. This is exactly why deadline aggressiveness (minimize-stops fuel mode, skipping rest stops) exists and is reserved for the final day — it's the release valve when redistribution alone can't close the gap without breaking the deadline.
+
+**Manual "extend leg" / "shorten leg" controls**: a button in-app lets the user manually override today's driving target in either direction — feeling good and want to push further, or not feeling like a full day. This is a user-initiated trigger for the same proportional replanning used for automatic schedule drift: extending or shortening today's leg re-divides the *remaining* distance across the *remaining* days (still subject to the extra-day-instead-of-overlong-days rule for soft-target trips). "Extend leg" is explicitly the one path where the user can push a day past their own max-comfortable-hours ceiling — it's opt-in, so the ceiling that otherwise always wins for automatic replanning doesn't apply when the user is the one asking for it. Using either button also shifts that day's hotel search to match the new stopping point.
 
 ## Open areas not yet decided
 
