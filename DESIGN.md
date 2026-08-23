@@ -29,7 +29,7 @@ Persistent, reused across trips:
 
 - **Vehicles** (multiple supported, one selected per trip): fuel range, mpg (city/highway), tank capacity
 - **Meal preferences**: preferred time windows for breakfast/lunch/dinner, and preferred place type/cuisine per meal, editable per trip
-- **Driving comfort**: max comfortable driving hours per day; preferred stop frequency
+- **Driving comfort**: max comfortable driving hours per day; preferred stop frequency; earliest/latest comfortable departure time each day (default latest: 11am, typical hotel checkout time); earliest/latest comfortable stopping time each day (default earliest: 3pm, typical hotel check-in time; default latest: sunset)
 - **Hotel budget**: target per-night budget for multi-day trips
 - **Learned stop durations**: the app tracks actual time spent at each stop and builds personal averages over time, tracked per stop type (fuel / meal / rest / hotel check-in) and, within meal stops, per venue category (fast food / sit-down / coffee) since typical duration varies a lot by category. Early trips fall back to generic estimates until enough personal data accumulates; used to make schedule/deadline projections realistic instead of relying on generic assumptions.
 
@@ -74,7 +74,7 @@ On hard-deadline trips, the app actively tracks pace against the deadline (using
 
 ## Multi-day trips
 
-- **Auto-segmentation**: if total driving distance/time exceeds the user's max-comfortable-driving-hours preference, the app automatically splits the trip into day-segments sized to that preference.
+- **Auto-segmentation**: if total driving distance/time exceeds the user's max-comfortable-driving-hours preference, the app automatically splits the trip into day-segments sized to that preference. Each day's segment is also bounded by the departure/stopping time-of-day windows above — e.g. a day can't start before the earliest-comfortable-departure time or run past the latest-comfortable-stopping time, even if max-driving-hours alone would allow it.
 - At the end of each day's leg, the app finds a hotel near that endpoint matching the user's per-night budget target and routes to it (same "recommend + route" pattern as fuel/meal/rest stops — **no booking/payment integration for now**, the user checks in themselves; the data model should stay open to add real booking as a later phase).
 - The departure-time finalization phase (pull live data, compute the day's plan + alternatives) repeats each morning of a multi-day trip, not just once at the start.
 
@@ -82,7 +82,10 @@ On hard-deadline trips, the app actively tracks pace against the deadline (using
 
 **Deadline aggressiveness is last-day-only.** For multi-day trips, the aggressive behaviors defined above (minimize-stops fuel mode, skipping rest stops, confirm-first prompts to cut stops) only activate on the trip's final driving day. On earlier days, falling behind schedule does not trigger stop-cutting — it's absorbed by replanning instead (below). This means a single-day trip is always effectively "the last day," so aggressive behavior can still kick in immediately if it's a hard-deadline trip.
 
-**Falling behind on a non-final day — proportional replanning**: rather than tracking an accumulating time deficit, the app recomputes the remaining day-segments from scratch whenever schedule status changes meaningfully — re-dividing all remaining driving distance evenly across all remaining days (up to the deadline, for hard-deadline trips). This is self-correcting: it naturally raises each remaining day's driving target when behind, and lowers it back down if time is made up later, without needing separate deficit-tracking state.
+**Falling behind (or ahead) on a non-final day — proportional replanning**: rather than tracking an accumulating time deficit, the app recomputes the remaining day-segments from scratch whenever schedule status changes meaningfully — re-dividing all remaining driving distance evenly across all remaining days. This is symmetric and self-correcting: falling behind raises each remaining day's driving target, running ahead lowers it, all without separate deficit-tracking state.
+
+- **Soft-target trips** (no hard deadline): the max-comfortable-driving-hours ceiling always wins. If proportional replanning would need to push a day's driving past that ceiling to stay on the original day-count, the app adds an extra day to the trip instead and re-divides across the new, larger number of days — trading a longer trip for comfortable days rather than forcing long catch-up days.
+- **Hard-deadline trips**: the day count is fixed by the deadline and can't be extended, so the max-comfortable-hours ceiling can't always be honored this way. This is exactly why deadline aggressiveness (minimize-stops fuel mode, skipping rest stops) exists and is reserved for the final day — it's the release valve when redistribution alone can't close the gap without breaking the deadline.
 
 ## Open areas not yet decided
 
