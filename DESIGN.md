@@ -74,9 +74,15 @@ On hard-deadline trips, the app actively tracks pace against the deadline (using
 
 ## Multi-day trips
 
-- Each day's driving leg is sized by the user's max-comfortable-driving-hours preference.
+- **Auto-segmentation**: if total driving distance/time exceeds the user's max-comfortable-driving-hours preference, the app automatically splits the trip into day-segments sized to that preference.
 - At the end of each day's leg, the app finds a hotel near that endpoint matching the user's per-night budget target and routes to it (same "recommend + route" pattern as fuel/meal/rest stops — **no booking/payment integration for now**, the user checks in themselves; the data model should stay open to add real booking as a later phase).
 - The departure-time finalization phase (pull live data, compute the day's plan + alternatives) repeats each morning of a multi-day trip, not just once at the start.
+
+**End-of-day email checkpoint**: at the end of each driving day, the app sends an email summarizing that day — all stops made, and how far ahead of/behind schedule the day ended. The email includes a link into the next day's itinerary, where the user can make selections for that day (e.g. choosing among scheduled meal options) before departure-time finalization runs the next morning.
+
+**Deadline aggressiveness is last-day-only.** For multi-day trips, the aggressive behaviors defined above (minimize-stops fuel mode, skipping rest stops, confirm-first prompts to cut stops) only activate on the trip's final driving day. On earlier days, falling behind schedule does not trigger stop-cutting — it's absorbed by replanning instead (below). This means a single-day trip is always effectively "the last day," so aggressive behavior can still kick in immediately if it's a hard-deadline trip.
+
+**Falling behind on a non-final day — proportional replanning**: rather than tracking an accumulating time deficit, the app recomputes the remaining day-segments from scratch whenever schedule status changes meaningfully — re-dividing all remaining driving distance evenly across all remaining days (up to the deadline, for hard-deadline trips). This is self-correcting: it naturally raises each remaining day's driving target when behind, and lowers it back down if time is made up later, without needing separate deficit-tracking state.
 
 ## Open areas not yet decided
 
@@ -85,3 +91,4 @@ On hard-deadline trips, the app actively tracks pace against the deadline (using
 - Whether return-leg stops for round trips are planned in full at trip setup or left to departure-time finalization on the return date.
 - iOS background-location permission constraints and how much they limit "time to leave" / schedule-tracking reliability while the phone is locked or another app (e.g. the embedded nav view) is frontmost.
 - Whether vehicle mpg should account for city vs. highway split dynamically based on detected driving context, or just use a single stored highway mpg value as a simplification.
+- Email delivery mechanism for the end-of-day checkpoint (transactional email provider), and what the linked "select next day's itinerary" web view needs (a lightweight authenticated web page, presumably, separate from the iOS app itself).
