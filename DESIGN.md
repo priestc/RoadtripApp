@@ -89,6 +89,16 @@ On hard-deadline trips, the app actively tracks pace against the deadline (using
 
 **Manual "extend leg" / "shorten leg" controls**: a button in-app lets the user manually override today's driving target in either direction — feeling good and want to push further, or not feeling like a full day. This is a user-initiated trigger for the same proportional replanning used for automatic schedule drift: extending or shortening today's leg re-divides the *remaining* distance across the *remaining* days (still subject to the extra-day-instead-of-overlong-days rule for soft-target trips). "Extend leg" is explicitly the one path where the user can push a day past their own max-comfortable-hours ceiling — it's opt-in, so the ceiling that otherwise always wins for automatic replanning doesn't apply when the user is the one asking for it. Using either button also shifts that day's hotel search to match the new stopping point.
 
+## Timezone handling
+
+Crossing a timezone must never cause the user to silently lose or gain an hour anywhere in the app's math or displays. This means keeping two kinds of time strictly separate:
+
+- **Elapsed time / duration math** (driving hours accumulated, schedule ahead/behind calculations, learned stop durations) is always computed from absolute timestamps (e.g. UTC), never by subtracting two displayed local clock times. A stop that started at 2:00pm Central and ended at 2:40pm Eastern is a 40-minute stop plus a timezone jump, not a 40-minute stop that happens to also show a 1-hour jump on the clock.
+- **Wall-clock preferences** (earliest/latest comfortable departure and stopping times, meal time windows) describe a time-of-day, and must be reinterpreted against whichever timezone the car is currently/about to be in — not the timezone the trip started in. If "latest comfortable stopping time" is sunset and a timezone line is crossed mid-afternoon, the app re-evaluates against the new local sunset, not the origin timezone's.
+- **Deadlines and soft-target dates/times** are interpreted in the **destination's** timezone (e.g. "arrive by 5pm Friday" means 5pm at the destination), matching how people naturally think about arrival deadlines like a flight or a venue closing time.
+- **The end-of-day email and next-day itinerary** display times in whatever timezone the user physically stopped in for the night, not the origin timezone.
+- The app should proactively surface a brief notice when a timezone change occurs mid-drive (similar in spirit to how phones already do this for the system clock), since it affects the deadline countdown and today's remaining stopping window.
+
 ## Open areas not yet decided
 
 - Data sources for live fuel prices and restaurant/hotel candidates (e.g. GasBuddy-style pricing feed vs. Google Places), and fallback behavior when that data is stale or unavailable mid-route.
