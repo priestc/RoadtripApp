@@ -301,9 +301,6 @@ function DayMapInner({
       <div>
         <p className="text-xl font-semibold text-slate-800">
           {formatMiles(day.distanceMeters)} · {formatDuration(day.durationSeconds)} driving
-          {dayGallons != null && tankPercent != null && (
-            <> · {dayGallons.toFixed(1)} gal ({tankPercent.toFixed(0)}% of tank)</>
-          )}
         </p>
       </div>
 
@@ -374,6 +371,11 @@ function DayMapInner({
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
         <p className="mb-2 text-sm font-medium text-slate-700">Gas</p>
+        {dayGallons != null && tankPercent != null && (
+          <p className="text-slate-600">
+            {dayGallons.toFixed(1)} gal for this day ({tankPercent.toFixed(0)}% of tank)
+          </p>
+        )}
         {gasInfo?.average != null && (
           <p className="text-slate-600">
             Avg price along this leg: ${gasInfo.average.toFixed(2)}/gal
