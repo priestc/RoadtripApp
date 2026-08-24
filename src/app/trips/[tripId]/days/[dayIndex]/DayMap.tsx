@@ -293,8 +293,12 @@ function DayMapInner({
   // arrival, what a full fill-up there would cost, and -- when the next
   // fuel stop down the road is cheaper -- how many gallons to buy here to
   // just reach that next stop with the fixed reserve left, rather than
-  // topping all the way off at the pricier stop. Assumes a full top-off at
-  // any stop where the next one isn't cheaper.
+  // topping all the way off at the pricier stop. Which of those two the
+  // plan actually assumes (chosenStrategy) follows the stop's own
+  // fillStrategy choice when set (via the checkboxes below), defaulting to
+  // the recommended one (partial when cheaper stop follows, full
+  // otherwise) -- this choice is what determines the next stop's starting
+  // range, so it has to be resolved before moving on to it.
   const fuelStopPlan = useMemo(() => {
     if (!day || !vehicle || fuelRangeMiles === null || initialFuelStops.length === 0) {
       return null;
@@ -311,6 +315,7 @@ function DayMapInner({
         fillUpCost: number;
         cheaperAhead: boolean;
         gallonsToBuyForNextCheaper: number | null;
+        chosenStrategy: "full" | "partial";
       }
     > = {};
 
@@ -341,6 +346,12 @@ function DayMapInner({
           (milesToNext + FUEL_RESERVE_MILES) / vehicle.gasMileageMpg
         );
         gallonsToBuyForNextCheaper = Math.max(0, gallonsNeeded - gallonsRemaining);
+      }
+
+      const chosenStrategy: "full" | "partial" =
+        cheaperAhead && stop.fillStrategy !== "full" ? "partial" : "full";
+
+      if (chosenStrategy === "partial" && gallonsToBuyForNextCheaper !== null) {
         rangeMiles = (gallonsRemaining + gallonsToBuyForNextCheaper) * vehicle.gasMileageMpg;
       } else {
         rangeMiles = vehicle.fuelCapacityGallons * vehicle.gasMileageMpg;
@@ -353,12 +364,19 @@ function DayMapInner({
         fillUpCost,
         cheaperAhead,
         gallonsToBuyForNextCheaper,
+        chosenStrategy,
       };
       prevMiles = milesFromStart;
     });
 
     return plan;
   }, [day, vehicle, fuelRangeMiles, initialFuelStops]);
+
+  function handleFillStrategyChange(city: string, fillStrategy: "full" | "partial") {
+    onFuelStopsChange(
+      initialFuelStops.map((s) => (s.city === city ? { ...s, fillStrategy } : s))
+    );
+  }
 
   const itinerary = useMemo(() => {
     if (!day || dayHasDinner === null) return null;
@@ -727,18 +745,40 @@ function DayMapInner({
                 );
               } else if (plan) {
                 elements.push(
-                  <div key={`${i}-plan`} className="space-y-0.5 py-0.5 pl-8 text-xs text-slate-400">
+                  <div key={`${i}-plan`} className="space-y-1 py-0.5 pl-8 text-xs text-slate-400">
                     <p>
                       ~{plan.gallonsRemaining.toFixed(1)} gal on arrival (
                       {plan.tankPercent.toFixed(0)}% of tank)
                     </p>
-                    <p>Fill up completely here: ~${plan.fillUpCost.toFixed(2)}</p>
-                    {plan.cheaperAhead && (
-                      <p>
-                        Next stop is cheaper — buy ~
-                        {plan.gallonsToBuyForNextCheaper!.toFixed(1)} gal here to reach it with
-                        reserve instead of filling up
-                      </p>
+                    {plan.cheaperAhead ? (
+                      <>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`fill-strategy-${row.fuelStop!.city}`}
+                            checked={plan.chosenStrategy === "full"}
+                            onChange={() =>
+                              handleFillStrategyChange(row.fuelStop!.city, "full")
+                            }
+                          />
+                          Fill up completely here: ~${plan.fillUpCost.toFixed(2)}
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`fill-strategy-${row.fuelStop!.city}`}
+                            checked={plan.chosenStrategy === "partial"}
+                            onChange={() =>
+                              handleFillStrategyChange(row.fuelStop!.city, "partial")
+                            }
+                          />
+                          Next stop is cheaper — buy ~
+                          {plan.gallonsToBuyForNextCheaper!.toFixed(1)} gal here to reach it
+                          with reserve instead of filling up
+                        </label>
+                      </>
+                    ) : (
+                      <p>Fill up completely here: ~${plan.fillUpCost.toFixed(2)}</p>
                     )}
                   </div>
                 );

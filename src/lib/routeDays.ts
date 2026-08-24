@@ -355,6 +355,11 @@ export interface FuelStopSelection {
   lng: number;
   drivingFraction: number;
   secondsSinceMidnight: number;
+  /** How much to buy here, when a cheaper stop follows -- "full" tops off
+   * completely, "partial" buys just enough to reach that next stop with
+   * the fixed reserve. Absent/undefined defaults to the recommended choice
+   * (partial when a cheaper stop follows, full otherwise). */
+  fillStrategy?: "full" | "partial";
 }
 
 /** Same purpose as isLunchSelection -- guards against malformed data loaded
