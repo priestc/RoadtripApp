@@ -48,6 +48,7 @@ function NewTripForm({
   const [departureLocation, setDepartureLocation] = useState("");
   const [deadlineType, setDeadlineType] = useState<DeadlineType>("tbd");
   const [deadlineDateTime, setDeadlineDateTime] = useState("");
+  const [plannedArrivalDateTime, setPlannedArrivalDateTime] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +67,10 @@ function NewTripForm({
           deadlineType === "tbd"
             ? null
             : new Date(deadlineDateTime).toISOString(),
+        plannedArrivalDateTime:
+          deadlineType === "soft"
+            ? new Date(plannedArrivalDateTime).toISOString()
+            : null,
         createdAt: serverTimestamp(),
       };
       const tripRef = await addDoc(collection(getFirebaseDb(), "trips"), trip);
@@ -187,6 +192,18 @@ function NewTripForm({
                 required
                 value={deadlineDateTime}
                 onChange={(e) => setDeadlineDateTime(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+          )}
+
+          {deadlineType === "soft" && (
+            <Field label="Planned to arrive around">
+              <input
+                type="datetime-local"
+                required
+                value={plannedArrivalDateTime}
+                onChange={(e) => setPlannedArrivalDateTime(e.target.value)}
                 className={inputClass}
               />
             </Field>

@@ -10,8 +10,11 @@ export interface Trip {
   destination: string;
   departureLocation: string;
   deadlineType: DeadlineType;
-  // ISO string for 'hard'/'soft', null for 'tbd'
+  // ISO string: hard = must-arrive-by deadline, soft = planned departure. Null for 'tbd'.
   deadlineDateTime: string | null;
+  // ISO string: soft-target trips only, a planned arrival estimate alongside
+  // deadlineDateTime's planned departure. Null/absent otherwise.
+  plannedArrivalDateTime?: string | null;
   // How many days the drive is split into; unset until the trip page has
   // computed a route and the user has picked (or been defaulted into) a
   // value from the day-count dropdown.

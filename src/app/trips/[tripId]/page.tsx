@@ -89,11 +89,16 @@ function describeDeadline(trip: Trip): string {
   if (trip.deadlineType === "tbd" || !trip.deadlineDateTime) {
     return "No dates set yet";
   }
-  const formatted = new Date(trip.deadlineDateTime).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-  return trip.deadlineType === "hard"
-    ? `Must arrive by ${formatted}`
-    : `Planning to leave around ${formatted}`;
+  const formatted = (iso: string) =>
+    new Date(iso).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  if (trip.deadlineType === "hard") {
+    return `Must arrive by ${formatted(trip.deadlineDateTime)}`;
+  }
+  const departure = `Planning to leave around ${formatted(trip.deadlineDateTime)}`;
+  return trip.plannedArrivalDateTime
+    ? `${departure}, arriving around ${formatted(trip.plannedArrivalDateTime)}`
+    : departure;
 }
