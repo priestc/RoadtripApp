@@ -100,6 +100,23 @@ interface LunchSearchResult {
   lng: number;
 }
 
+interface GasSearchResult {
+  placeId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  pricePerGallon: number;
+}
+
+interface CheapestGasStop {
+  name: string;
+  pricePerGallon: number;
+  lat: number;
+  lng: number;
+  drivingFraction: number;
+  secondsSinceMidnight: number;
+}
+
 const LUNCH_WINDOW_START_SECONDS = timeStringToSeconds(LUNCH_WINDOW_START);
 const LUNCH_WINDOW_END_SECONDS = timeStringToSeconds(LUNCH_WINDOW_END);
 
@@ -322,6 +339,75 @@ function RouteMapInner({
     };
   }, [days, dayHasDinner, geometryLibrary]);
 
+  // For each day, gas stations with current regular-unleaded pricing found
+  // via a search along that day's full route (not window-restricted, since
+  // fuel stops aren't tied to a time of day the way meals are) -- used for
+  // that day's average price and to flag the single cheapest station as an
+  // automatic "Cheapest gas" stop.
+  const [cheapestGasByDay, setCheapestGasByDay] = useState<
+    Array<CheapestGasStop | null> | null
+  >(null);
+  const [avgGasPriceByDay, setAvgGasPriceByDay] = useState<
+    Array<number | null> | null
+  >(null);
+
+  useEffect(() => {
+    if (!days || !dayHasDinner || !geometryLibrary) return;
+    let cancelled = false;
+
+    Promise.all(
+      days.map(async (day, i) => {
+        const encodedPolyline = geometryLibrary.encoding.encodePath(day.path);
+        let results: GasSearchResult[];
+        try {
+          const res = await fetch("/api/places/gas-search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ encodedPolyline }),
+          });
+          results = res.ok ? await res.json() : [];
+        } catch {
+          results = [];
+        }
+
+        if (results.length === 0) {
+          return { cheapest: null as CheapestGasStop | null, average: null as number | null };
+        }
+
+        const average =
+          results.reduce((sum, r) => sum + r.pricePerGallon, 0) / results.length;
+        const cheapestResult = results.reduce((min, r) =>
+          r.pricePerGallon < min.pricePerGallon ? r : min
+        );
+        const drivingFraction = nearestFractionOnPath(day, {
+          lat: cheapestResult.lat,
+          lng: cheapestResult.lng,
+        });
+        const cheapest: CheapestGasStop = {
+          name: cheapestResult.name,
+          pricePerGallon: cheapestResult.pricePerGallon,
+          lat: cheapestResult.lat,
+          lng: cheapestResult.lng,
+          drivingFraction,
+          secondsSinceMidnight: secondsAtDrivingFraction(
+            day.durationSeconds,
+            dayHasDinner[i],
+            drivingFraction
+          ),
+        };
+        return { cheapest, average };
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      setCheapestGasByDay(results.map((r) => r.cheapest));
+      setAvgGasPriceByDay(results.map((r) => r.average));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [days, dayHasDinner, geometryLibrary]);
+
   // Per-day lunch choice: explicit per-day overrides layered on top of
   // whatever was saved on the trip. Using a plain object (day index -> value)
   // rather than a full array lets a single day's toggle update independently.
@@ -489,6 +575,26 @@ function RouteMapInner({
                 </AdvancedMarker>
               ))
             )}
+          {cheapestGasByDay &&
+            cheapestGasByDay.map((gas, i) =>
+              gas ? (
+                <AdvancedMarker
+                  key={`gas-${i}`}
+                  position={{ lat: gas.lat, lng: gas.lng }}
+                  anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                >
+                  <div className="relative h-5 w-5">
+                    <div
+                      className="h-5 w-5 rounded-full border-2 border-white shadow"
+                      style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
+                    />
+                    <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                      Cheapest gas
+                    </span>
+                  </div>
+                </AdvancedMarker>
+              ) : null
+            )}
           {fillUpPoint && (
             <AdvancedMarker
               position={fillUpPoint}
@@ -551,6 +657,17 @@ function RouteMapInner({
                   </span>
                 </div>
 
+                <div className="mb-2 pl-5 text-xs text-slate-600">
+                  {avgGasPriceByDay?.[i] != null ? (
+                    <p>
+                      Avg gas along this leg: $
+                      {avgGasPriceByDay[i]!.toFixed(2)}/gal
+                    </p>
+                  ) : avgGasPriceByDay === null ? (
+                    <p className="text-slate-400">Checking gas prices…</p>
+                  ) : null}
+                </div>
+
                 <div className="mb-2 space-y-1 pl-5 text-xs text-slate-600">
                   {lunchOptions === undefined && (
                     <p className="text-slate-400">Finding lunch spots…</p>
@@ -582,32 +699,51 @@ function RouteMapInner({
                 </div>
 
                 <div className="space-y-0.5 pl-5">
-                  {itinerary.map((stop, stopIndex) => {
-                    let detail: string | null = null;
-                    if (stop.label === "Departure") {
-                      detail = boundaryCitiesReady ? boundaryCities![i] : null;
-                    } else if (stop.label === "Arrival") {
-                      detail = boundaryCitiesReady ? boundaryCities![i + 1] : null;
-                    } else if (stop.label === "Lunch") {
-                      detail = selectedLunch
-                        ? `${selectedLunch.name} (${selectedLunch.type})`
-                        : null;
-                    } else {
-                      detail = dinnerCitiesReady ? dinnerCitiesByDay![i] : null;
+                  {(() => {
+                    const rows = itinerary.map((stop) => {
+                      let detail: string | null = null;
+                      if (stop.label === "Departure") {
+                        detail = boundaryCitiesReady ? boundaryCities![i] : null;
+                      } else if (stop.label === "Arrival") {
+                        detail = boundaryCitiesReady ? boundaryCities![i + 1] : null;
+                      } else if (stop.label === "Lunch") {
+                        detail = selectedLunch
+                          ? `${selectedLunch.name} (${selectedLunch.type})`
+                          : null;
+                      } else {
+                        detail = dinnerCitiesReady ? dinnerCitiesByDay![i] : null;
+                      }
+                      return {
+                        label: stop.label as string,
+                        detail,
+                        secondsSinceMidnight: stop.secondsSinceMidnight,
+                      };
+                    });
+
+                    const gas = cheapestGasByDay?.[i];
+                    if (gas) {
+                      rows.push({
+                        label: "Cheapest gas",
+                        detail: `${gas.name} ($${gas.pricePerGallon.toFixed(2)}/gal)`,
+                        secondsSinceMidnight: gas.secondsSinceMidnight,
+                      });
                     }
-                    return (
+
+                    rows.sort((a, b) => a.secondsSinceMidnight - b.secondsSinceMidnight);
+
+                    return rows.map((row, rowIndex) => (
                       <div
-                        key={stopIndex}
+                        key={rowIndex}
                         className="flex items-center justify-between text-slate-500"
                       >
                         <span>
-                          {stop.label}
-                          {detail ? ` — ${detail}` : ""}
+                          {row.label}
+                          {row.detail ? ` — ${row.detail}` : ""}
                         </span>
-                        <span>{formatSecondsAsClockTime(stop.secondsSinceMidnight)}</span>
+                        <span>{formatSecondsAsClockTime(row.secondsSinceMidnight)}</span>
                       </div>
-                    );
-                  })}
+                    ));
+                  })()}
                 </div>
               </div>
             );
