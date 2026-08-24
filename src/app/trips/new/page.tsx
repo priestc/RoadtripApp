@@ -2,15 +2,11 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import {
-  addDoc,
-  collection,
-  doc,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
+import { Field, inputClass } from "@/components/FormControls";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 import type { DeadlineType, Trip } from "@/lib/types";
 
 export default function NewTripPage() {
@@ -36,8 +32,6 @@ export default function NewTripPage() {
     );
   }
 
-  // profile is guaranteed loaded here, so the form below can safely seed its
-  // initial state from profile.homeAddress without needing an effect.
   return <NewTripForm userId={user.uid} homeAddress={profile.homeAddress} />;
 }
 
@@ -51,8 +45,7 @@ function NewTripForm({
   const router = useRouter();
 
   const [destination, setDestination] = useState("");
-  const [departureLocation, setDepartureLocation] = useState(homeAddress ?? "");
-  const [saveAsHome, setSaveAsHome] = useState(true);
+  const [departureLocation, setDepartureLocation] = useState("");
   const [deadlineType, setDeadlineType] = useState<DeadlineType>("tbd");
   const [deadlineDateTime, setDeadlineDateTime] = useState("");
 
@@ -76,15 +69,6 @@ function NewTripForm({
         createdAt: serverTimestamp(),
       };
       const tripRef = await addDoc(collection(getFirebaseDb(), "trips"), trip);
-
-      if (saveAsHome && departureLocation.trim() !== (homeAddress ?? "")) {
-        await setDoc(
-          doc(getFirebaseDb(), "users", userId),
-          { homeAddress: departureLocation.trim() },
-          { merge: true }
-        );
-      }
-
       router.push(`/trips/${tripRef.id}`);
     } catch {
       setError("Couldn't create this trip. Please try again.");
@@ -105,35 +89,30 @@ function NewTripForm({
         </div>
 
         <Field label="Destination">
-          <input
-            type="text"
-            required
-            placeholder="e.g. Yellowstone National Park"
+          <AddressAutocomplete
             value={destination}
-            onChange={(e) => setDestination(e.target.value)}
-            className={inputClass}
+            onChange={setDestination}
+            placeholder="e.g. Yellowstone National Park"
           />
         </Field>
 
         <div className="space-y-1">
           <Field label="Departure location">
-            <input
-              type="text"
-              required
-              placeholder="e.g. 123 Main St, Columbus, OH"
+            <AddressAutocomplete
               value={departureLocation}
-              onChange={(e) => setDepartureLocation(e.target.value)}
-              className={inputClass}
+              onChange={setDepartureLocation}
+              placeholder="e.g. 123 Main St, Columbus, OH"
             />
           </Field>
-          <label className="flex items-center gap-2 text-sm text-slate-500">
-            <input
-              type="checkbox"
-              checked={saveAsHome}
-              onChange={(e) => setSaveAsHome(e.target.checked)}
-            />
-            Save as my home address
-          </label>
+          {homeAddress && (
+            <button
+              type="button"
+              onClick={() => setDepartureLocation(homeAddress)}
+              className="text-sm font-medium text-slate-600 hover:text-slate-900"
+            >
+              Use home address
+            </button>
+          )}
         </div>
 
         <fieldset className="space-y-3">
@@ -225,25 +204,5 @@ function NewTripForm({
         </button>
       </form>
     </main>
-  );
-}
-
-const inputClass =
-  "w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none";
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="block text-sm font-medium text-slate-700">
-        {label}
-      </label>
-      {children}
-    </div>
   );
 }
