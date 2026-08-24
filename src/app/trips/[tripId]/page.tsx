@@ -135,6 +135,7 @@ export default function TripDetailPage() {
   );
 
   const vehicleId = vehicleIdOverride ?? trip.vehicleId ?? "";
+  const selectedVehicle = vehicles.find((v) => v.id === vehicleId) ?? null;
   const fuelRangeInput =
     fuelRangeOverride ??
     (trip.currentFuelRangeMiles != null
@@ -211,6 +212,14 @@ export default function TripDetailPage() {
           fuelRangeMiles={fuelRangeMiles}
           initialLunchChoices={lunchChoicesByDay}
           onLunchChoicesChange={handleLunchChoicesChange}
+          vehicle={
+            selectedVehicle
+              ? {
+                  gasMileageMpg: selectedVehicle.gasMileageMpg,
+                  fuelCapacityGallons: selectedVehicle.fuelCapacityGallons,
+                }
+              : null
+          }
         />
       </div>
     </main>

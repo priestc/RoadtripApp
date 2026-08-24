@@ -19,10 +19,12 @@ import {
   formatSecondsAsClockTime,
   getDefaultNumDays,
   getMaxDayOptions,
+  getRouteDistanceMeters,
   getRouteDurationSeconds,
   hasDinnerStop,
   LUNCH_WINDOW_END,
   LUNCH_WINDOW_START,
+  metersToMiles,
   milesToMeters,
   secondsAtDrivingFraction,
   splitRouteIntoDays,
@@ -103,6 +105,11 @@ const LUNCH_WINDOW_END_SECONDS = timeStringToSeconds(LUNCH_WINDOW_END);
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
+export interface TripVehicle {
+  gasMileageMpg: number;
+  fuelCapacityGallons: number;
+}
+
 export default function RouteMap({
   departureLocation,
   destination,
@@ -111,6 +118,7 @@ export default function RouteMap({
   fuelRangeMiles,
   initialLunchChoices,
   onLunchChoicesChange,
+  vehicle,
 }: {
   departureLocation: string;
   destination: string;
@@ -119,6 +127,7 @@ export default function RouteMap({
   fuelRangeMiles: number | null;
   initialLunchChoices?: Array<LunchSelection | null>;
   onLunchChoicesChange: (choices: Array<LunchSelection | null>) => void;
+  vehicle: TripVehicle | null;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
     return (
@@ -138,6 +147,7 @@ export default function RouteMap({
         fuelRangeMiles={fuelRangeMiles}
         initialLunchChoices={initialLunchChoices}
         onLunchChoicesChange={onLunchChoicesChange}
+        vehicle={vehicle}
       />
     </APIProvider>
   );
@@ -151,6 +161,7 @@ function RouteMapInner({
   fuelRangeMiles,
   initialLunchChoices,
   onLunchChoicesChange,
+  vehicle,
 }: {
   departureLocation: string;
   destination: string;
@@ -159,6 +170,7 @@ function RouteMapInner({
   fuelRangeMiles: number | null;
   initialLunchChoices?: Array<LunchSelection | null>;
   onLunchChoicesChange: (choices: Array<LunchSelection | null>) => void;
+  vehicle: TripVehicle | null;
 }) {
   const map = useMap();
   const routesLibrary = useMapsLibrary("routes");
@@ -232,6 +244,14 @@ function RouteMapInner({
     if (!leg || !fuelRangeMiles || fuelRangeMiles <= 0) return null;
     return findPointAtDistance(leg, milesToMeters(fuelRangeMiles));
   }, [leg, fuelRangeMiles]);
+
+  // Total fuel for the whole trip's distance -- deliberately not netting
+  // out whatever range is already in the tank (that's what fillUpPoint is
+  // for), just total gallons the full distance would burn.
+  const totalGallonsNeeded = useMemo(() => {
+    if (!leg || !vehicle) return null;
+    return metersToMiles(getRouteDistanceMeters(leg)) / vehicle.gasMileageMpg;
+  }, [leg, vehicle]);
 
   // Whether each day gets an automatic dinner stop.
   const dayHasDinner = useMemo(
@@ -515,6 +535,19 @@ function RouteMapInner({
                   <span className="text-slate-400">
                     {formatMiles(day.distanceMeters)} ·{" "}
                     {formatDuration(day.durationSeconds)} driving
+                    {vehicle && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        {(() => {
+                          const dayGallons =
+                            metersToMiles(day.distanceMeters) / vehicle.gasMileageMpg;
+                          const tankPercent =
+                            (dayGallons / vehicle.fuelCapacityGallons) * 100;
+                          return `${dayGallons.toFixed(1)} gal (${tankPercent.toFixed(0)}% of tank)`;
+                        })()}
+                      </>
+                    )}
                   </span>
                 </div>
 
@@ -579,6 +612,27 @@ function RouteMapInner({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {leg && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+          <p className="font-medium text-slate-700">Fuel for this trip</p>
+          {vehicle && totalGallonsNeeded !== null ? (
+            <p className="mt-1 text-slate-600">
+              {formatMiles(getRouteDistanceMeters(leg))} total — about{" "}
+              <span className="font-semibold">
+                {totalGallonsNeeded.toFixed(1)} gallons
+              </span>{" "}
+              at {vehicle.gasMileageMpg} mpg. This is fuel for the entire
+              trip&apos;s distance — it doesn&apos;t subtract whatever&apos;s
+              already in the tank at the start.
+            </p>
+          ) : (
+            <p className="mt-1 text-slate-400">
+              Select a vehicle above to estimate total fuel needed.
+            </p>
+          )}
         </div>
       )}
     </div>

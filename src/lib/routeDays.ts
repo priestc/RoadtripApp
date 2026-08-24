@@ -41,7 +41,15 @@ export function getRouteDurationSeconds(leg: google.maps.DirectionsLeg): number 
   return leg.steps.reduce((sum, step) => sum + (step.duration?.value ?? 0), 0);
 }
 
+export function getRouteDistanceMeters(leg: google.maps.DirectionsLeg): number {
+  return leg.steps.reduce((sum, step) => sum + (step.distance?.value ?? 0), 0);
+}
+
 const METERS_PER_MILE = 1609.344;
+
+export function metersToMiles(meters: number): number {
+  return meters / METERS_PER_MILE;
+}
 
 export function milesToMeters(miles: number): number {
   return miles * METERS_PER_MILE;
