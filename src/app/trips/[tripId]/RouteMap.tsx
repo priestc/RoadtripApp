@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   APIProvider,
   Map,
@@ -14,9 +14,10 @@ import {
   estimateDayWindow,
   formatDuration,
   formatMiles,
+  getDefaultNumDays,
+  getMaxDayOptions,
+  getRouteDurationSeconds,
   splitRouteIntoDays,
-  type DailyWindowPreferences,
-  type RouteDaySegment,
 } from "@/lib/routeDays";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -24,11 +25,15 @@ const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 export default function RouteMap({
   departureLocation,
   destination,
-  windowPreferences,
+  earliestDepartureTime,
+  initialNumDays,
+  onNumDaysChange,
 }: {
   departureLocation: string;
   destination: string;
-  windowPreferences: DailyWindowPreferences;
+  earliestDepartureTime: string;
+  initialNumDays?: number;
+  onNumDaysChange: (numDays: number) => void;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
     return (
@@ -43,7 +48,9 @@ export default function RouteMap({
       <RouteMapInner
         departureLocation={departureLocation}
         destination={destination}
-        windowPreferences={windowPreferences}
+        earliestDepartureTime={earliestDepartureTime}
+        initialNumDays={initialNumDays}
+        onNumDaysChange={onNumDaysChange}
       />
     </APIProvider>
   );
@@ -52,22 +59,28 @@ export default function RouteMap({
 function RouteMapInner({
   departureLocation,
   destination,
-  windowPreferences,
+  earliestDepartureTime,
+  initialNumDays,
+  onNumDaysChange,
 }: {
   departureLocation: string;
   destination: string;
-  windowPreferences: DailyWindowPreferences;
+  earliestDepartureTime: string;
+  initialNumDays?: number;
+  onNumDaysChange: (numDays: number) => void;
 }) {
   const map = useMap();
   const routesLibrary = useMapsLibrary("routes");
 
-  const [days, setDays] = useState<RouteDaySegment[] | null>(null);
+  const [leg, setLeg] = useState<google.maps.DirectionsLeg | null>(null);
+  const [numDaysOverride, setNumDaysOverride] = useState<number | null>(null);
   const [endpoints, setEndpoints] = useState<{
     start: google.maps.LatLngLiteral;
     end: google.maps.LatLngLiteral;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Fetch the route once per departure/destination pair.
   useEffect(() => {
     if (!routesLibrary || !map) return;
 
@@ -80,19 +93,25 @@ function RouteMapInner({
         travelMode: google.maps.TravelMode.DRIVING,
       })
       .then((result) => {
-        const leg = result.routes[0]?.legs[0];
-        if (!leg) {
+        const resultLeg = result.routes[0]?.legs[0];
+        if (!resultLeg) {
           setError("Couldn't find a route between these locations.");
           return;
         }
-        setDays(splitRouteIntoDays(leg, windowPreferences));
+        setLeg(resultLeg);
         setEndpoints({
-          start: { lat: leg.start_location.lat(), lng: leg.start_location.lng() },
-          end: { lat: leg.end_location.lat(), lng: leg.end_location.lng() },
+          start: {
+            lat: resultLeg.start_location.lat(),
+            lng: resultLeg.start_location.lng(),
+          },
+          end: {
+            lat: resultLeg.end_location.lat(),
+            lng: resultLeg.end_location.lng(),
+          },
         });
 
         const bounds = new google.maps.LatLngBounds();
-        leg.steps.forEach((step) =>
+        resultLeg.steps.forEach((step) =>
           step.path.forEach((point) => bounds.extend(point))
         );
         map.fitBounds(bounds, 40);
@@ -100,10 +119,55 @@ function RouteMapInner({
       .catch(() => {
         setError("Couldn't calculate a route between these locations.");
       });
-  }, [routesLibrary, map, departureLocation, destination, windowPreferences]);
+  }, [routesLibrary, map, departureLocation, destination]);
+
+  const maxDays = leg ? getMaxDayOptions(getRouteDurationSeconds(leg)) : null;
+
+  // Starting day count: the saved value if there is one and it's still
+  // valid for this route, otherwise a sensible default. Once the user
+  // picks a value explicitly, that override takes precedence.
+  const defaultNumDays = useMemo(() => {
+    if (!leg || maxDays === null) return null;
+    if (initialNumDays && initialNumDays >= 1 && initialNumDays <= maxDays) {
+      return initialNumDays;
+    }
+    return getDefaultNumDays(getRouteDurationSeconds(leg), maxDays);
+  }, [leg, maxDays, initialNumDays]);
+
+  const numDays = numDaysOverride ?? defaultNumDays;
+
+  const days = useMemo(() => {
+    if (!leg || !numDays) return null;
+    return splitRouteIntoDays(leg, numDays);
+  }, [leg, numDays]);
+
+  function handleNumDaysChange(value: number) {
+    setNumDaysOverride(value);
+    onNumDaysChange(value);
+  }
 
   return (
     <div className="space-y-3">
+      {maxDays !== null && numDays !== null && (
+        <div className="flex items-center gap-2">
+          <label htmlFor="num-days" className="text-sm font-medium text-slate-700">
+            Split into
+          </label>
+          <select
+            id="num-days"
+            value={numDays}
+            onChange={(e) => handleNumDaysChange(Number(e.target.value))}
+            className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none"
+          >
+            {Array.from({ length: maxDays }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>
+                {n} day{n === 1 ? "" : "s"}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="h-96 overflow-hidden rounded-lg border border-slate-200">
         <Map
           mapId="roadtrip-route-map"
@@ -137,7 +201,7 @@ function RouteMapInner({
           {days.map((day, i) => {
             const { start, end } = estimateDayWindow(
               day.durationSeconds,
-              windowPreferences
+              earliestDepartureTime
             );
             return (
               <div

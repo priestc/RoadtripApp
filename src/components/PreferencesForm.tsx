@@ -3,22 +3,14 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 
 export interface PreferencesFormValues {
-  maxDrivingHoursPerDay: number;
   earliestDepartureTime: string;
-  latestDepartureTime: string;
-  earliestStoppingTime: string;
-  latestStoppingTime: string;
   breakfastTime: string | null;
   lunchTime: string;
   dinnerTime: string;
 }
 
 const DEFAULTS: PreferencesFormValues = {
-  maxDrivingHoursPerDay: 8,
   earliestDepartureTime: "07:00",
-  latestDepartureTime: "11:00",
-  earliestStoppingTime: "15:00",
-  latestStoppingTime: "20:00",
   breakfastTime: "08:00",
   lunchTime: "12:30",
   dinnerTime: "18:30",
@@ -37,20 +29,8 @@ export function PreferencesForm({
 }: PreferencesFormProps) {
   const merged = { ...DEFAULTS, ...initialValues };
 
-  const [maxDrivingHoursPerDay, setMaxDrivingHoursPerDay] = useState(
-    String(merged.maxDrivingHoursPerDay)
-  );
   const [earliestDepartureTime, setEarliestDepartureTime] = useState(
     merged.earliestDepartureTime
-  );
-  const [latestDepartureTime, setLatestDepartureTime] = useState(
-    merged.latestDepartureTime
-  );
-  const [earliestStoppingTime, setEarliestStoppingTime] = useState(
-    merged.earliestStoppingTime
-  );
-  const [latestStoppingTime, setLatestStoppingTime] = useState(
-    merged.latestStoppingTime
   );
   const [skipBreakfast, setSkipBreakfast] = useState(
     merged.breakfastTime === null
@@ -70,11 +50,7 @@ export function PreferencesForm({
     setSaving(true);
     try {
       await onSubmit({
-        maxDrivingHoursPerDay: Number(maxDrivingHoursPerDay),
         earliestDepartureTime,
-        latestDepartureTime,
-        earliestStoppingTime,
-        latestStoppingTime,
         breakfastTime: skipBreakfast ? null : breakfastTime,
         lunchTime,
         dinnerTime,
@@ -88,73 +64,20 @@ export function PreferencesForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
-      <Field label="How many hours per day are you comfortable driving?">
+      <Field label="Earliest you want to leave">
         <input
-          type="number"
-          min={1}
-          max={24}
-          step={0.5}
+          type="time"
           required
-          value={maxDrivingHoursPerDay}
-          onChange={(e) => setMaxDrivingHoursPerDay(e.target.value)}
+          value={earliestDepartureTime}
+          onChange={(e) => setEarliestDepartureTime(e.target.value)}
           className={inputClass}
         />
+        <Hint>
+          How early you&apos;re willing to depart. Hotel checkout (11:00 AM)
+          and check-in (3:00 PM) are fixed and used to plan each day&apos;s
+          drive.
+        </Hint>
       </Field>
-
-      <fieldset className="space-y-4">
-        <legend className="text-sm font-medium text-slate-700">
-          Departure window
-        </legend>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Earliest you want to leave">
-            <input
-              type="time"
-              required
-              value={earliestDepartureTime}
-              onChange={(e) => setEarliestDepartureTime(e.target.value)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Latest you're comfortable leaving">
-            <input
-              type="time"
-              required
-              value={latestDepartureTime}
-              onChange={(e) => setLatestDepartureTime(e.target.value)}
-              className={inputClass}
-            />
-            <Hint>Defaults to 11:00 AM, typical hotel checkout time.</Hint>
-          </Field>
-        </div>
-      </fieldset>
-
-      <fieldset className="space-y-4">
-        <legend className="text-sm font-medium text-slate-700">
-          Stopping window for the night
-        </legend>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Earliest you're comfortable stopping">
-            <input
-              type="time"
-              required
-              value={earliestStoppingTime}
-              onChange={(e) => setEarliestStoppingTime(e.target.value)}
-              className={inputClass}
-            />
-            <Hint>Defaults to 3:00 PM, typical hotel check-in time.</Hint>
-          </Field>
-          <Field label="Latest you're comfortable stopping">
-            <input
-              type="time"
-              required
-              value={latestStoppingTime}
-              onChange={(e) => setLatestStoppingTime(e.target.value)}
-              className={inputClass}
-            />
-            <Hint>Defaults to sunset once the app can calculate it locally.</Hint>
-          </Field>
-        </div>
-      </fieldset>
 
       <fieldset className="space-y-4">
         <legend className="text-sm font-medium text-slate-700">

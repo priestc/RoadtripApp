@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
 import type { Trip } from "@/lib/types";
@@ -55,6 +55,15 @@ export default function TripDetailPage() {
     );
   }
 
+  function handleNumDaysChange(numDrivingDays: number) {
+    if (!params.tripId) return;
+    updateDoc(doc(getFirebaseDb(), "trips", params.tripId), {
+      numDrivingDays,
+    }).catch(() => {
+      // Non-critical — the map already reflects the new selection locally.
+    });
+  }
+
   return (
     <main className="flex flex-1 justify-center px-4 py-12">
       <div className="w-full max-w-3xl space-y-6">
@@ -68,13 +77,9 @@ export default function TripDetailPage() {
         <RouteMap
           departureLocation={trip.departureLocation}
           destination={trip.destination}
-          windowPreferences={{
-            maxDrivingHoursPerDay: profile?.maxDrivingHoursPerDay ?? 8,
-            earliestDepartureTime: profile?.earliestDepartureTime ?? "07:00",
-            latestDepartureTime: profile?.latestDepartureTime ?? "11:00",
-            earliestStoppingTime: profile?.earliestStoppingTime ?? "15:00",
-            latestStoppingTime: profile?.latestStoppingTime ?? "20:00",
-          }}
+          earliestDepartureTime={profile?.earliestDepartureTime ?? "07:00"}
+          initialNumDays={trip.numDrivingDays}
+          onNumDaysChange={handleNumDaysChange}
         />
       </div>
     </main>

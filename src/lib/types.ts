@@ -1,9 +1,5 @@
 export interface DrivingPreferences {
-  maxDrivingHoursPerDay: number;
   earliestDepartureTime: string; // "HH:MM", 24-hour
-  latestDepartureTime: string;
-  earliestStoppingTime: string;
-  latestStoppingTime: string;
   breakfastTime: string | null;
   lunchTime: string;
   dinnerTime: string;
@@ -20,6 +16,10 @@ export interface Trip {
   deadlineType: DeadlineType;
   // ISO string for 'hard'/'soft', null for 'tbd'
   deadlineDateTime: string | null;
+  // How many days the drive is split into; unset until the trip page has
+  // computed a route and the user has picked (or been defaulted into) a
+  // value from the day-count dropdown.
+  numDrivingDays?: number;
   // Firestore server timestamp; typed loosely since the client only ever reads it
   createdAt: unknown;
 }
