@@ -23,3 +23,11 @@ export interface Trip {
   // Firestore server timestamp; typed loosely since the client only ever reads it
   createdAt: unknown;
 }
+
+export interface Vehicle {
+  name: string;
+  fuelCapacityGallons: number;
+  gasMileageMpg: number;
+  // Firestore server timestamp; typed loosely since the client only ever reads it
+  createdAt: unknown;
+}
