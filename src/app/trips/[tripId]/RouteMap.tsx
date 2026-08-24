@@ -13,6 +13,7 @@ import {
 import {
   buildDayItinerary,
   DAY_COLORS,
+  findPointAtDistance,
   formatDuration,
   formatMiles,
   formatSecondsAsClockTime,
@@ -20,6 +21,7 @@ import {
   getMaxDayOptions,
   getMealStops,
   getRouteDurationSeconds,
+  milesToMeters,
   splitRouteIntoDays,
   type RouteDaySegment,
 } from "@/lib/routeDays";
@@ -43,11 +45,13 @@ export default function RouteMap({
   destination,
   initialNumDays,
   onNumDaysChange,
+  fuelRangeMiles,
 }: {
   departureLocation: string;
   destination: string;
   initialNumDays?: number;
   onNumDaysChange: (numDays: number) => void;
+  fuelRangeMiles: number | null;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
     return (
@@ -64,6 +68,7 @@ export default function RouteMap({
         destination={destination}
         initialNumDays={initialNumDays}
         onNumDaysChange={onNumDaysChange}
+        fuelRangeMiles={fuelRangeMiles}
       />
     </APIProvider>
   );
@@ -74,11 +79,13 @@ function RouteMapInner({
   destination,
   initialNumDays,
   onNumDaysChange,
+  fuelRangeMiles,
 }: {
   departureLocation: string;
   destination: string;
   initialNumDays?: number;
   onNumDaysChange: (numDays: number) => void;
+  fuelRangeMiles: number | null;
 }) {
   const map = useMap();
   const routesLibrary = useMapsLibrary("routes");
@@ -143,6 +150,14 @@ function RouteMapInner({
     setNumDaysOverride(value);
     onNumDaysChange(value);
   }
+
+  // Where the car would first need to fill up, based on the current fuel
+  // range against the full route (not per-day) — null if no range is
+  // entered yet, or the range covers the whole trip.
+  const fillUpPoint = useMemo(() => {
+    if (!leg || !fuelRangeMiles || fuelRangeMiles <= 0) return null;
+    return findPointAtDistance(leg, milesToMeters(fuelRangeMiles));
+  }, [leg, fuelRangeMiles]);
 
   // Which meal stops each day gets — kept as its own memo (rather than
   // recomputed inline) so the geocoding effect and the render below always
@@ -273,6 +288,18 @@ function RouteMapInner({
                 </AdvancedMarker>
               ))
             )}
+          {fillUpPoint && (
+            <AdvancedMarker position={fillUpPoint}>
+              <div className="flex flex-col items-center gap-0.5">
+                <Pin background="#f59e0b" borderColor="#b45309" glyphColor="#ffffff">
+                  <span aria-hidden>⛽</span>
+                </Pin>
+                <span className="whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                  Fill up
+                </span>
+              </div>
+            </AdvancedMarker>
+          )}
         </Map>
       </div>
 

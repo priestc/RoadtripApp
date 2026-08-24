@@ -19,6 +19,11 @@ export interface Trip {
   // computed a route and the user has picked (or been defaulted into) a
   // value from the day-count dropdown.
   numDrivingDays?: number;
+  // Which of the user's saved vehicles (users/{uid}/vehicles/{id}) this trip uses.
+  vehicleId?: string;
+  // Current fuel range in miles, as of the start of the trip -- used to
+  // place the first fill-up point on the map.
+  currentFuelRangeMiles?: number;
   // Firestore server timestamp; typed loosely since the client only ever reads it
   createdAt: unknown;
 }

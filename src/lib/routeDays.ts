@@ -37,6 +37,44 @@ export function getRouteDurationSeconds(leg: google.maps.DirectionsLeg): number 
   return leg.steps.reduce((sum, step) => sum + (step.duration?.value ?? 0), 0);
 }
 
+const METERS_PER_MILE = 1609.344;
+
+export function milesToMeters(miles: number): number {
+  return miles * METERS_PER_MILE;
+}
+
+/**
+ * Finds the point along the full route (not a single day) that's exactly
+ * `targetDistanceMeters` of driving from the start — used to place the
+ * first fill-up point once the user enters their current fuel range.
+ * Returns null if the range covers the whole route (no fill-up needed) or
+ * the target is non-positive.
+ */
+export function findPointAtDistance(
+  leg: google.maps.DirectionsLeg,
+  targetDistanceMeters: number
+): google.maps.LatLngLiteral | null {
+  if (targetDistanceMeters <= 0) return null;
+
+  let elapsedMeters = 0;
+  for (const step of leg.steps) {
+    const stepMeters = step.distance?.value ?? 0;
+    if (elapsedMeters + stepMeters >= targetDistanceMeters) {
+      const fraction = stepMeters > 0 ? (targetDistanceMeters - elapsedMeters) / stepMeters : 0;
+      const path = step.path;
+      const index = Math.min(
+        Math.max(Math.round(fraction * (path.length - 1)), 0),
+        path.length - 1
+      );
+      const point = path[index];
+      return { lat: point.lat(), lng: point.lng() };
+    }
+    elapsedMeters += stepMeters;
+  }
+
+  return null;
+}
+
 /**
  * The largest number of days worth offering in the day-count dropdown.
  * Days are split evenly, so this is the largest N for which total/N is
@@ -172,7 +210,7 @@ export function formatDuration(seconds: number): string {
 }
 
 export function formatMiles(meters: number): string {
-  const miles = meters / 1609.344;
+  const miles = meters / METERS_PER_MILE;
   return `${Math.round(miles)} mi`;
 }
 
