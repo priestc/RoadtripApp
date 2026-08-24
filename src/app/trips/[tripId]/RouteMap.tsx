@@ -106,11 +106,15 @@ interface GasSearchResult {
   lat: number;
   lng: number;
   pricePerGallon: number;
+  city: string | null;
 }
 
 interface CheapestGasStop {
-  name: string;
-  pricePerGallon: number;
+  /** The cheapest city's name (not a single station's). */
+  city: string;
+  /** That city's average price across its stations found along the route. */
+  avgPricePerGallon: number;
+  /** Centroid of that city's stations, used as the map position. */
   lat: number;
   lng: number;
   drivingFraction: number;
@@ -341,9 +345,11 @@ function RouteMapInner({
 
   // For each day, gas stations with current regular-unleaded pricing found
   // via a search along that day's full route (not window-restricted, since
-  // fuel stops aren't tied to a time of day the way meals are) -- used for
-  // that day's average price and to flag the single cheapest station as an
-  // automatic "Cheapest gas" stop.
+  // fuel stops aren't tied to a time of day the way meals are), grouped by
+  // city. Used for that day's overall average price (across every station
+  // found) and to flag whichever city has the cheapest average as an
+  // automatic "Cheapest gas" stop, positioned at that city's stations'
+  // centroid.
   const [cheapestGasByDay, setCheapestGasByDay] = useState<
     Array<CheapestGasStop | null> | null
   >(null);
@@ -376,25 +382,44 @@ function RouteMapInner({
 
         const average =
           results.reduce((sum, r) => sum + r.pricePerGallon, 0) / results.length;
-        const cheapestResult = results.reduce((min, r) =>
-          r.pricePerGallon < min.pricePerGallon ? r : min
-        );
-        const drivingFraction = nearestFractionOnPath(day, {
-          lat: cheapestResult.lat,
-          lng: cheapestResult.lng,
-        });
-        const cheapest: CheapestGasStop = {
-          name: cheapestResult.name,
-          pricePerGallon: cheapestResult.pricePerGallon,
-          lat: cheapestResult.lat,
-          lng: cheapestResult.lng,
-          drivingFraction,
-          secondsSinceMidnight: secondsAtDrivingFraction(
-            day.durationSeconds,
-            dayHasDinner[i],
-            drivingFraction
-          ),
-        };
+
+        // Group by city (skipping stations whose city couldn't be
+        // determined -- they can't be grouped) and average each city's
+        // prices, then find the cheapest city overall. (A plain object,
+        // not the built-in Map class -- that name is already taken here by
+        // the react-google-maps <Map> component import.)
+        const byCity: Record<string, GasSearchResult[]> = {};
+        for (const r of results) {
+          if (!r.city) continue;
+          (byCity[r.city] ??= []).push(r);
+        }
+
+        let cheapest: CheapestGasStop | null = null;
+        for (const [city, stations] of Object.entries(byCity)) {
+          const cityAverage =
+            stations.reduce((sum, s) => sum + s.pricePerGallon, 0) /
+            stations.length;
+          if (!cheapest || cityAverage < cheapest.avgPricePerGallon) {
+            const lat =
+              stations.reduce((sum, s) => sum + s.lat, 0) / stations.length;
+            const lng =
+              stations.reduce((sum, s) => sum + s.lng, 0) / stations.length;
+            const drivingFraction = nearestFractionOnPath(day, { lat, lng });
+            cheapest = {
+              city,
+              avgPricePerGallon: cityAverage,
+              lat,
+              lng,
+              drivingFraction,
+              secondsSinceMidnight: secondsAtDrivingFraction(
+                day.durationSeconds,
+                dayHasDinner[i],
+                drivingFraction
+              ),
+            };
+          }
+        }
+
         return { cheapest, average };
       })
     ).then((results) => {
@@ -724,7 +749,7 @@ function RouteMapInner({
                     if (gas) {
                       rows.push({
                         label: "Cheapest gas",
-                        detail: `${gas.name} ($${gas.pricePerGallon.toFixed(2)}/gal)`,
+                        detail: `${gas.city} ($${gas.avgPricePerGallon.toFixed(2)}/gal avg)`,
                         secondsSinceMidnight: gas.secondsSinceMidnight,
                       });
                     }

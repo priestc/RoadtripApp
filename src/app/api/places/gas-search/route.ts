@@ -14,11 +14,18 @@ interface FuelPrice {
   price?: Money;
 }
 
+interface AddressComponent {
+  longText?: string;
+  shortText?: string;
+  types?: string[];
+}
+
 interface TextSearchPlace {
   id: string;
   displayName?: { text?: string };
   location?: { latitude?: number; longitude?: number };
   fuelOptions?: { fuelPrices?: FuelPrice[] };
+  addressComponents?: AddressComponent[];
 }
 
 export interface GasSearchResult {
@@ -27,10 +34,38 @@ export interface GasSearchResult {
   lat: number;
   lng: number;
   pricePerGallon: number;
+  /** "City, ST", or null if no locality-level component was found. */
+  city: string | null;
 }
 
 function moneyToNumber(money: Money): number {
   return Number(money.units ?? 0) + (money.nanos ?? 0) / 1_000_000_000;
+}
+
+/** Pulls a "City, State" label out of Places address components, falling
+ * back to progressively broader area types for the city part if there's no
+ * exact locality (e.g. a station out in the countryside). */
+function extractCity(components: AddressComponent[] | undefined): string | null {
+  if (!components) return null;
+  const cityTypes = [
+    "locality",
+    "administrative_area_level_3",
+    "administrative_area_level_2",
+  ];
+  let city: string | null = null;
+  for (const type of cityTypes) {
+    const component = components.find((c) => c.types?.includes(type));
+    if (component?.longText) {
+      city = component.longText;
+      break;
+    }
+  }
+  if (!city) return null;
+
+  const state = components.find((c) =>
+    c.types?.includes("administrative_area_level_1")
+  );
+  return state?.shortText ? `${city}, ${state.shortText}` : city;
 }
 
 // Gas prices are assumed static for the day (an intentional simplification
@@ -73,7 +108,7 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
         "X-Goog-FieldMask":
-          "places.id,places.displayName,places.location,places.fuelOptions",
+          "places.id,places.displayName,places.location,places.fuelOptions,places.addressComponents",
       },
       body: JSON.stringify({
         textQuery: "gas station",
@@ -110,6 +145,7 @@ export async function POST(request: NextRequest) {
           lat: place.location.latitude,
           lng: place.location.longitude,
           pricePerGallon: moneyToNumber(regular.price),
+          city: extractCity(place.addressComponents),
         };
       })
       .filter((result): result is GasSearchResult => result !== null);
