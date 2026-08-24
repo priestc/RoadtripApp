@@ -103,6 +103,7 @@ interface LunchSearchResult {
   type: string;
   lat: number;
   lng: number;
+  city: string | null;
 }
 
 const LUNCH_WINDOW_START_SECONDS = timeStringToSeconds(LUNCH_WINDOW_START);
@@ -141,6 +142,7 @@ export async function searchLunchForDay(
         type: r.type,
         lat: r.lat,
         lng: r.lng,
+        city: r.city,
         drivingFraction,
         secondsSinceMidnight: secondsAtDrivingFraction(
           day.durationSeconds,

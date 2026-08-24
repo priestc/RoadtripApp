@@ -311,6 +311,9 @@ export interface LunchSelection {
   lng: number;
   drivingFraction: number;
   secondsSinceMidnight: number;
+  /** "City, ST", or null/undefined if unavailable — optional so trips saved
+   * before this field existed still pass isLunchSelection. */
+  city?: string | null;
 }
 
 /**

@@ -3,11 +3,18 @@ import { ApiCache } from "@/lib/apiCache";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
+interface AddressComponent {
+  longText?: string;
+  shortText?: string;
+  types?: string[];
+}
+
 interface TextSearchPlace {
   id: string;
   displayName?: { text?: string };
   primaryTypeDisplayName?: { text?: string };
   location?: { latitude?: number; longitude?: number };
+  addressComponents?: AddressComponent[];
 }
 
 export interface LunchSearchResult {
@@ -16,6 +23,34 @@ export interface LunchSearchResult {
   type: string;
   lat: number;
   lng: number;
+  /** "City, ST", or null if no locality-level component was found. */
+  city: string | null;
+}
+
+/** Pulls a "City, State" label out of Places address components, falling
+ * back to progressively broader area types for the city part if there's no
+ * exact locality (e.g. a restaurant out in the countryside). */
+function extractCity(components: AddressComponent[] | undefined): string | null {
+  if (!components) return null;
+  const cityTypes = [
+    "locality",
+    "administrative_area_level_3",
+    "administrative_area_level_2",
+  ];
+  let city: string | null = null;
+  for (const type of cityTypes) {
+    const component = components.find((c) => c.types?.includes(type));
+    if (component?.longText) {
+      city = component.longText;
+      break;
+    }
+  }
+  if (!city) return null;
+
+  const state = components.find((c) =>
+    c.types?.includes("administrative_area_level_1")
+  );
+  return state?.shortText ? `${city}, ${state.shortText}` : city;
 }
 
 // Keyed by encodedPolyline, which is exactly what determines the result --
@@ -59,7 +94,7 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
         "X-Goog-FieldMask":
-          "places.id,places.displayName,places.primaryTypeDisplayName,places.location",
+          "places.id,places.displayName,places.primaryTypeDisplayName,places.location,places.addressComponents",
       },
       body: JSON.stringify({
         textQuery: "restaurant",
@@ -89,6 +124,7 @@ export async function POST(request: NextRequest) {
         type: place.primaryTypeDisplayName?.text ?? "Restaurant",
         lat: place.location!.latitude!,
         lng: place.location!.longitude!,
+        city: extractCity(place.addressComponents),
       }));
 
     lunchSearchCache.set(encodedPolyline, results);

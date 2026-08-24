@@ -471,7 +471,7 @@ function RouteMapInner({
                         detail = boundaryCitiesReady ? boundaryCities![i + 1] : null;
                       } else if (stop.label === "Lunch") {
                         detail = selectedLunch
-                          ? `${selectedLunch.name} (${selectedLunch.type})`
+                          ? `${selectedLunch.name} (${selectedLunch.type})${selectedLunch.city ? ` — ${selectedLunch.city}` : ""}`
                           : null;
                       } else {
                         detail = dinnerCitiesReady ? dinnerCitiesByDay![i] : null;

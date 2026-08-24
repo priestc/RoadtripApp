@@ -334,7 +334,7 @@ function DayMapInner({
                 else if (stop.label === "Arrival") detail = boundaryCities?.end ?? null;
                 else if (stop.label === "Lunch")
                   detail = initialLunchChoice
-                    ? `${initialLunchChoice.name} (${initialLunchChoice.type})`
+                    ? `${initialLunchChoice.name} (${initialLunchChoice.type})${initialLunchChoice.city ? ` — ${initialLunchChoice.city}` : ""}`
                     : null;
                 else detail = dinnerCity;
                 return {
@@ -401,7 +401,10 @@ function DayMapInner({
                     onChange={() => onLunchChoiceChange(option)}
                   />
                   {option.name}{" "}
-                  <span className="text-xs text-slate-400">({option.type})</span>
+                  <span className="text-xs text-slate-400">
+                    ({option.type}
+                    {option.city ? ` — ${option.city}` : ""})
+                  </span>
                 </span>
                 <span className="text-xs text-slate-400">
                   {formatSecondsAsClockTime(option.secondsSinceMidnight)}
