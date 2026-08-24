@@ -5,15 +5,28 @@ export interface RouteDaySegment {
 
 /**
  * Splits a computed driving route into per-day segments based on a max
- * driving-hours-per-day preference. Day boundaries snap to the nearest
- * direction-step boundary rather than the exact elapsed second, which is a
- * reasonable approximation for visualizing the route on a map.
+ * driving-hours-per-day preference. Rather than greedily filling each day up
+ * to the max (which leaves a short leftover final day), the total drive time
+ * is divided evenly across however many days it takes to stay under the max,
+ * so every day ends up with a similar amount of driving. Day boundaries snap
+ * to the nearest direction-step boundary rather than the exact elapsed
+ * second, which is a reasonable approximation for visualizing the route on a
+ * map.
  */
 export function splitRouteIntoDays(
   leg: google.maps.DirectionsLeg,
   maxDrivingHoursPerDay: number
 ): RouteDaySegment[] {
-  const dayLengthSeconds = (maxDrivingHoursPerDay || 8) * 3600;
+  const maxDayLengthSeconds = (maxDrivingHoursPerDay || 8) * 3600;
+  const totalDurationSeconds = leg.steps.reduce(
+    (sum, step) => sum + (step.duration?.value ?? 0),
+    0
+  );
+  const numDays = Math.max(
+    1,
+    Math.ceil(totalDurationSeconds / maxDayLengthSeconds)
+  );
+  const dayLengthSeconds = totalDurationSeconds / numDays;
   const days: RouteDaySegment[] = [];
 
   let elapsedSeconds = 0;
