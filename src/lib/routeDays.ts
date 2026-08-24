@@ -341,6 +341,32 @@ export function isLunchSelection(value: unknown): value is LunchSelection {
   );
 }
 
+/** A city picked, by clicking its marker on a day's Gas map, as a fuel
+ * stop for that day. */
+export interface FuelStopSelection {
+  city: string;
+  avgPricePerGallon: number;
+  lat: number;
+  lng: number;
+  drivingFraction: number;
+  secondsSinceMidnight: number;
+}
+
+/** Same purpose as isLunchSelection -- guards against malformed data loaded
+ * from Firestore reaching the Maps SDK. */
+export function isFuelStopSelection(value: unknown): value is FuelStopSelection {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.city === "string" &&
+    typeof v.avgPricePerGallon === "number" &&
+    typeof v.lat === "number" &&
+    typeof v.lng === "number" &&
+    typeof v.drivingFraction === "number" &&
+    typeof v.secondsSinceMidnight === "number"
+  );
+}
+
 /**
  * Builds the full stop-by-stop itinerary for a driving day: departure, an
  * optional lunch stop (only if the user picked a specific restaurant from

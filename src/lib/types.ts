@@ -1,4 +1,4 @@
-import type { LunchSelection } from "@/lib/routeDays";
+import type { FuelStopSelection, LunchSelection } from "@/lib/routeDays";
 
 export interface DrivingPreferences {
   onboardingComplete: true;
@@ -30,6 +30,9 @@ export interface Trip {
   // along that day's route, or null for no lunch that day. Indexed by day;
   // unset/shorter-than-days-length entries default to null (no lunch).
   lunchChoicesByDay?: Array<LunchSelection | null>;
+  // Per-day fuel stop -- a city picked by clicking its marker on that day's
+  // Gas map, or null for none. Indexed the same way as lunchChoicesByDay.
+  fuelStopsByDay?: Array<FuelStopSelection | null>;
   // Firestore server timestamp; typed loosely since the client only ever reads it
   createdAt: unknown;
 }

@@ -5,6 +5,7 @@ import {
   AdvancedMarker,
   AdvancedMarkerAnchorPoint,
   APIProvider,
+  InfoWindow,
   Map,
   Polyline,
   useMap,
@@ -23,6 +24,7 @@ import {
   hasDinnerStop,
   metersToMiles,
   splitRouteIntoDays,
+  type FuelStopSelection,
   type LunchSelection,
   type RouteDaySegment,
 } from "@/lib/routeDays";
@@ -58,6 +60,8 @@ export default function DayMap({
   initialNumDays,
   initialLunchChoice,
   onLunchChoiceChange,
+  initialFuelStop,
+  onFuelStopChange,
   vehicle,
 }: {
   dayIndex: number;
@@ -66,6 +70,8 @@ export default function DayMap({
   initialNumDays?: number;
   initialLunchChoice: LunchSelection | null;
   onLunchChoiceChange: (choice: LunchSelection | null) => void;
+  initialFuelStop: FuelStopSelection | null;
+  onFuelStopChange: (stop: FuelStopSelection | null) => void;
   vehicle: TripVehicle | null;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
@@ -85,6 +91,8 @@ export default function DayMap({
         initialNumDays={initialNumDays}
         initialLunchChoice={initialLunchChoice}
         onLunchChoiceChange={onLunchChoiceChange}
+        initialFuelStop={initialFuelStop}
+        onFuelStopChange={onFuelStopChange}
         vehicle={vehicle}
       />
     </APIProvider>
@@ -98,6 +106,8 @@ function DayMapInner({
   initialNumDays,
   initialLunchChoice,
   onLunchChoiceChange,
+  initialFuelStop,
+  onFuelStopChange,
   vehicle,
 }: {
   dayIndex: number;
@@ -106,6 +116,8 @@ function DayMapInner({
   initialNumDays?: number;
   initialLunchChoice: LunchSelection | null;
   onLunchChoiceChange: (choice: LunchSelection | null) => void;
+  initialFuelStop: FuelStopSelection | null;
+  onFuelStopChange: (stop: FuelStopSelection | null) => void;
   vehicle: TripVehicle | null;
 }) {
   const map = useMap();
@@ -197,6 +209,8 @@ function DayMapInner({
 
   // Which set of markers the map currently shows.
   const [markerMode, setMarkerMode] = useState<"stops" | "gas">("stops");
+  // City whose "add fuel stop" popup is currently open, in Gas mode.
+  const [openGasCity, setOpenGasCity] = useState<string | null>(null);
 
   // Current fuel range, entered fresh on each visit to this day (not
   // persisted -- it changes daily and isn't meaningful outside this page).
@@ -333,7 +347,10 @@ function DayMapInner({
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={() => setMarkerMode("stops")}
+          onClick={() => {
+            setMarkerMode("stops");
+            setOpenGasCity(null);
+          }}
           className={`rounded-md border px-3 py-1.5 text-sm font-medium transition ${
             markerMode === "stops"
               ? "border-slate-700 bg-slate-700 text-white"
@@ -387,6 +404,21 @@ function DayMapInner({
                 </div>
               </AdvancedMarker>
             ))}
+          {markerMode === "stops" && initialFuelStop && (
+            <AdvancedMarker
+              position={{ lat: initialFuelStop.lat, lng: initialFuelStop.lng }}
+              anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+            >
+              <div className="relative h-5 w-5">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-amber-500 text-[11px] shadow">
+                  <span aria-hidden>⛽</span>
+                </div>
+                <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                  Fuel stop
+                </span>
+              </div>
+            </AdvancedMarker>
+          )}
           {markerMode === "gas" &&
             gasInfo &&
             gasInfo.byCity.length > 0 &&
@@ -399,8 +431,9 @@ function DayMapInner({
                   key={cityStop.city}
                   position={{ lat: cityStop.lat, lng: cityStop.lng }}
                   anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                  onClick={() => setOpenGasCity(cityStop.city)}
                 >
-                  <div className="relative h-5 w-5">
+                  <div className="relative h-5 w-5 cursor-pointer">
                     <div
                       className="h-5 w-5 rounded-full border-2 border-white shadow"
                       style={{
@@ -413,6 +446,36 @@ function DayMapInner({
                   </div>
                 </AdvancedMarker>
               ));
+            })()}
+          {markerMode === "gas" &&
+            gasInfo &&
+            openGasCity &&
+            (() => {
+              const cityStop = gasInfo.byCity.find((c) => c.city === openGasCity);
+              if (!cityStop) return null;
+              const isSelected = initialFuelStop?.city === cityStop.city;
+              return (
+                <InfoWindow
+                  position={{ lat: cityStop.lat, lng: cityStop.lng }}
+                  onCloseClick={() => setOpenGasCity(null)}
+                >
+                  <div className="p-1 text-sm">
+                    <p className="mb-2 font-medium text-slate-700">
+                      {cityStop.city} — ${cityStop.avgPricePerGallon.toFixed(2)}/gal
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onFuelStopChange(isSelected ? null : cityStop);
+                        setOpenGasCity(null);
+                      }}
+                      className="rounded-md bg-slate-700 px-2 py-1 text-xs font-medium text-white hover:bg-slate-600"
+                    >
+                      {isSelected ? "Remove fuel stop" : "Add fuel stop here"}
+                    </button>
+                  </div>
+                </InfoWindow>
+              );
             })()}
         </Map>
       </div>
@@ -501,6 +564,14 @@ function DayMapInner({
                   secondsSinceMidnight: stop.secondsSinceMidnight,
                 };
               });
+
+            if (initialFuelStop) {
+              rows.push({
+                label: "Fuel stop",
+                detail: `${initialFuelStop.city} ($${initialFuelStop.avgPricePerGallon.toFixed(2)}/gal avg)`,
+                secondsSinceMidnight: initialFuelStop.secondsSinceMidnight,
+              });
+            }
 
             rows.sort((a, b) => a.secondsSinceMidnight - b.secondsSinceMidnight);
 

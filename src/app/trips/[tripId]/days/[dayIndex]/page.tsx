@@ -13,7 +13,12 @@ import {
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
-import { isLunchSelection, type LunchSelection } from "@/lib/routeDays";
+import {
+  isFuelStopSelection,
+  isLunchSelection,
+  type FuelStopSelection,
+  type LunchSelection,
+} from "@/lib/routeDays";
 import type { Trip, Vehicle } from "@/lib/types";
 import DayMap from "./DayMap";
 
@@ -92,8 +97,23 @@ export default function DayDetailPage() {
     });
   }
 
+  function handleFuelStopChange(stop: FuelStopSelection | null) {
+    if (!params.tripId || !trip) return;
+    const updated = [...(trip.fuelStopsByDay ?? [])];
+    while (updated.length <= dayIndex) updated.push(null);
+    updated[dayIndex] = stop;
+    updateDoc(doc(getFirebaseDb(), "trips", params.tripId), {
+      fuelStopsByDay: updated,
+    }).catch(() => {
+      // Non-critical — the map already reflects the selection locally.
+    });
+  }
+
   const rawChoice = trip.lunchChoicesByDay?.[dayIndex];
   const initialLunchChoice = isLunchSelection(rawChoice) ? rawChoice : null;
+
+  const rawFuelStop = trip.fuelStopsByDay?.[dayIndex];
+  const initialFuelStop = isFuelStopSelection(rawFuelStop) ? rawFuelStop : null;
 
   const vehicleId = trip.vehicleId ?? "";
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId) ?? null;
@@ -124,6 +144,8 @@ export default function DayDetailPage() {
           initialNumDays={trip.numDrivingDays}
           initialLunchChoice={initialLunchChoice}
           onLunchChoiceChange={handleLunchChoiceChange}
+          initialFuelStop={initialFuelStop}
+          onFuelStopChange={handleFuelStopChange}
           vehicle={
             selectedVehicle
               ? {
