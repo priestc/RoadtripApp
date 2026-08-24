@@ -281,9 +281,9 @@ function RouteMapInner({
   );
 }
 
-/** Pulls the nearest city-level name out of a geocoding result, falling
- * back to progressively broader area types if there's no exact locality
- * (e.g. a point out in the countryside). */
+/** Pulls a "City, State" label out of a geocoding result, falling back to
+ * progressively broader area types for the city part if there's no exact
+ * locality (e.g. a point out in the countryside). */
 function extractCityName(
   result: google.maps.GeocoderResult | undefined
 ): string | null {
@@ -293,11 +293,20 @@ function extractCityName(
     "administrative_area_level_3",
     "administrative_area_level_2",
   ];
+  let city: string | null = null;
   for (const type of candidateTypes) {
     const component = result.address_components.find((c) =>
       c.types.includes(type)
     );
-    if (component) return component.long_name;
+    if (component) {
+      city = component.long_name;
+      break;
+    }
   }
-  return null;
+  if (!city) return null;
+
+  const stateComponent = result.address_components.find((c) =>
+    c.types.includes("administrative_area_level_1")
+  );
+  return stateComponent ? `${city}, ${stateComponent.short_name}` : city;
 }
