@@ -290,34 +290,24 @@ function DayMapInner({
 
   const color = DAY_COLORS[dayIndex % DAY_COLORS.length];
 
+  const dayGallons = vehicle
+    ? metersToMiles(day.distanceMeters) / vehicle.gasMileageMpg
+    : null;
+  const tankPercent =
+    dayGallons != null && vehicle ? (dayGallons / vehicle.fuelCapacityGallons) * 100 : null;
+
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <label
-          htmlFor="fuel-range"
-          className="block text-sm font-medium text-slate-700"
-        >
-          Current fuel range (mi)
-        </label>
-        <input
-          id="fuel-range"
-          type="number"
-          min={0}
-          step={1}
-          placeholder="e.g. 150"
-          value={fuelRangeInput}
-          onChange={(e) => setFuelRangeInput(e.target.value)}
-          className="mt-1 w-36 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none"
-        />
-        {fuelRangeMiles !== null && (
-          <p className="mt-2 text-xs text-slate-600">
-            {maxDrivingFraction !== null && maxDrivingFraction <= 0
-              ? `You're already within your ${FUEL_RESERVE_MILES}-mile reserve — refuel before continuing.`
-              : reachableGas === undefined
-                ? "Checking for gas within your range…"
-                : reachableGas
-                  ? `Cheapest gas within range: ${reachableGas.city} ($${reachableGas.avgPricePerGallon.toFixed(2)}/gal avg), arriving around ${formatSecondsAsClockTime(reachableGas.secondsSinceMidnight)}`
-                  : `No gas stations found before you'd hit your ${FUEL_RESERVE_MILES}-mile reserve.`}
+      <div>
+        <p className="text-xl font-semibold text-slate-800">
+          {formatMiles(day.distanceMeters)} · {formatDuration(day.durationSeconds)} driving
+          {dayGallons != null && tankPercent != null && (
+            <> · {dayGallons.toFixed(1)} gal ({tankPercent.toFixed(0)}% of tank)</>
+          )}
+        </p>
+        {gasInfo?.average != null && (
+          <p className="text-lg text-slate-600">
+            Avg gas along this leg: ${gasInfo.average.toFixed(2)}/gal
           </p>
         )}
       </div>
@@ -387,37 +377,38 @@ function DayMapInner({
         </Map>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-        <div className="mb-1 flex items-center gap-2">
-          <span
-            className="inline-block h-3 w-3 shrink-0 rounded-full"
-            style={{ backgroundColor: color }}
-          />
-          <span className="font-medium text-slate-700">
-            {formatMiles(day.distanceMeters)} · {formatDuration(day.durationSeconds)}{" "}
-            driving
-            {vehicle && (
-              <>
-                {" "}
-                ·{" "}
-                {(() => {
-                  const dayGallons =
-                    metersToMiles(day.distanceMeters) / vehicle.gasMileageMpg;
-                  const tankPercent =
-                    (dayGallons / vehicle.fuelCapacityGallons) * 100;
-                  return `${dayGallons.toFixed(1)} gal (${tankPercent.toFixed(0)}% of tank)`;
-                })()}
-              </>
-            )}
-          </span>
-        </div>
-        {gasInfo?.average != null && (
-          <p className="text-xs text-slate-600">
-            Avg gas along this leg: ${gasInfo.average.toFixed(2)}/gal
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <label
+          htmlFor="fuel-range"
+          className="block text-sm font-medium text-slate-700"
+        >
+          Current fuel range (mi)
+        </label>
+        <input
+          id="fuel-range"
+          type="number"
+          min={0}
+          step={1}
+          placeholder="e.g. 150"
+          value={fuelRangeInput}
+          onChange={(e) => setFuelRangeInput(e.target.value)}
+          className="mt-1 w-36 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none"
+        />
+        {fuelRangeMiles !== null && (
+          <p className="mt-2 text-xs text-slate-600">
+            {maxDrivingFraction !== null && maxDrivingFraction <= 0
+              ? `You're already within your ${FUEL_RESERVE_MILES}-mile reserve — refuel before continuing.`
+              : reachableGas === undefined
+                ? "Checking for gas within your range…"
+                : reachableGas
+                  ? `Cheapest gas within range: ${reachableGas.city} ($${reachableGas.avgPricePerGallon.toFixed(2)}/gal avg), arriving around ${formatSecondsAsClockTime(reachableGas.secondsSinceMidnight)}`
+                  : `No gas stations found before you'd hit your ${FUEL_RESERVE_MILES}-mile reserve.`}
           </p>
         )}
+      </div>
 
-        <div className="mt-3 space-y-0.5">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+        <div className="space-y-0.5">
           {(() => {
             const rows = itinerary
               .filter((stop) => stop.label !== "Lunch" || initialLunchChoice)
