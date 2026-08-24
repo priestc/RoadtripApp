@@ -11,7 +11,9 @@ import {
 } from "@vis.gl/react-google-maps";
 import {
   DAY_COLORS,
+  estimateDayWindow,
   formatDuration,
+  formatMiles,
   splitRouteIntoDays,
   type RouteDaySegment,
 } from "@/lib/routeDays";
@@ -22,10 +24,12 @@ export default function RouteMap({
   departureLocation,
   destination,
   maxDrivingHoursPerDay,
+  earliestDepartureTime,
 }: {
   departureLocation: string;
   destination: string;
   maxDrivingHoursPerDay: number;
+  earliestDepartureTime: string;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
     return (
@@ -41,6 +45,7 @@ export default function RouteMap({
         departureLocation={departureLocation}
         destination={destination}
         maxDrivingHoursPerDay={maxDrivingHoursPerDay}
+        earliestDepartureTime={earliestDepartureTime}
       />
     </APIProvider>
   );
@@ -50,10 +55,12 @@ function RouteMapInner({
   departureLocation,
   destination,
   maxDrivingHoursPerDay,
+  earliestDepartureTime,
 }: {
   departureLocation: string;
   destination: string;
   maxDrivingHoursPerDay: number;
+  earliestDepartureTime: string;
 }) {
   const map = useMap();
   const routesLibrary = useMapsLibrary("routes");
@@ -130,21 +137,34 @@ function RouteMapInner({
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {days && days.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
-          {days.map((day, i) => (
-            <div key={i} className="flex items-center gap-2 text-sm">
-              <span
-                className="inline-block h-3 w-3 rounded-full"
-                style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
-              />
-              <span className="text-slate-700">
-                Day {i + 1}{" "}
-                <span className="text-slate-400">
-                  ({formatDuration(day.durationSeconds)} driving)
-                </span>
-              </span>
-            </div>
-          ))}
+        <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+          {days.map((day, i) => {
+            const { start, end } = estimateDayWindow(
+              earliestDepartureTime,
+              day.durationSeconds
+            );
+            return (
+              <div
+                key={i}
+                className="flex items-center justify-between gap-3 px-4 py-2 text-sm"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-block h-3 w-3 shrink-0 rounded-full"
+                    style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
+                  />
+                  <span className="font-medium text-slate-700">Day {i + 1}</span>
+                </div>
+                <div className="flex gap-4 text-slate-500">
+                  <span>{formatMiles(day.distanceMeters)}</span>
+                  <span>{formatDuration(day.durationSeconds)} driving</span>
+                  <span>
+                    {start} – {end}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
