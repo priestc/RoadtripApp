@@ -286,7 +286,7 @@ function DayMapInner({
     const tankPercent = (gallonsRemaining / vehicle.fuelCapacityGallons) * 100;
     const gallonsToFill = Math.max(0, vehicle.fuelCapacityGallons - gallonsRemaining);
     const fillUpCost = gallonsToFill * reachableGas.avgPricePerGallon;
-    return { gallonsRemaining, tankPercent, fillUpCost };
+    return { rangeMiles: milesRemaining, gallonsRemaining, tankPercent, fillUpCost };
   }, [day, vehicle, reachableGas, fuelRangeMiles]);
 
   // For each added fuel stop (in route order), how much fuel is left on
@@ -310,6 +310,7 @@ function DayMapInner({
       string,
       {
         unreachable: boolean;
+        arrivalRangeMiles: number;
         gallonsRemaining: number;
         tankPercent: number;
         fillUpCost: number;
@@ -329,6 +330,7 @@ function DayMapInner({
       // (or assumes) enough fuel at the prior stop to get there.
       const unreachable = i === 0 && milesFromStart > fuelRangeMiles - FUEL_RESERVE_MILES;
       rangeMiles = Math.max(0, rangeMiles - (milesFromStart - prevMiles));
+      const arrivalRangeMiles = rangeMiles;
 
       const gallonsRemaining = rangeMiles / vehicle.gasMileageMpg;
       const tankPercent = (gallonsRemaining / vehicle.fuelCapacityGallons) * 100;
@@ -359,6 +361,7 @@ function DayMapInner({
 
       plan[stop.city] = {
         unreachable,
+        arrivalRangeMiles,
         gallonsRemaining,
         tankPercent,
         fillUpCost,
@@ -639,7 +642,8 @@ function DayMapInner({
                 <>
                   <p>
                     Fuel left on arrival: ~{arrivalFuelInfo.gallonsRemaining.toFixed(1)} gal (
-                    {arrivalFuelInfo.tankPercent.toFixed(0)}% of tank)
+                    {arrivalFuelInfo.tankPercent.toFixed(0)}% of tank, ~
+                    {Math.round(arrivalFuelInfo.rangeMiles)} mi range)
                   </p>
                   <p>
                     Cost to fill up there: ~${arrivalFuelInfo.fillUpCost.toFixed(2)}
@@ -748,7 +752,8 @@ function DayMapInner({
                   <div key={`${i}-plan`} className="space-y-1 py-0.5 pl-8 text-xs text-slate-400">
                     <p>
                       ~{plan.gallonsRemaining.toFixed(1)} gal on arrival (
-                      {plan.tankPercent.toFixed(0)}% of tank)
+                      {plan.tankPercent.toFixed(0)}% of tank, ~
+                      {Math.round(plan.arrivalRangeMiles)} mi range)
                     </p>
                     {plan.cheaperAhead ? (
                       <>
