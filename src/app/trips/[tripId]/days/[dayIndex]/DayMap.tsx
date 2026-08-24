@@ -313,9 +313,11 @@ function DayMapInner({
         arrivalRangeMiles: number;
         gallonsRemaining: number;
         tankPercent: number;
+        fillUpGallons: number;
         fillUpCost: number;
         cheaperAhead: boolean;
         gallonsToBuyForNextCheaper: number | null;
+        costToBuyForNextCheaper: number | null;
         chosenStrategy: "full" | "partial";
       }
     > = {};
@@ -334,13 +336,14 @@ function DayMapInner({
 
       const gallonsRemaining = rangeMiles / vehicle.gasMileageMpg;
       const tankPercent = (gallonsRemaining / vehicle.fuelCapacityGallons) * 100;
-      const fillUpCost =
-        Math.max(0, vehicle.fuelCapacityGallons - gallonsRemaining) * stop.avgPricePerGallon;
+      const fillUpGallons = Math.max(0, vehicle.fuelCapacityGallons - gallonsRemaining);
+      const fillUpCost = fillUpGallons * stop.avgPricePerGallon;
 
       const next = sorted[i + 1];
       const cheaperAhead = !!next && next.avgPricePerGallon < stop.avgPricePerGallon;
 
       let gallonsToBuyForNextCheaper: number | null = null;
+      let costToBuyForNextCheaper: number | null = null;
       if (cheaperAhead && next) {
         const milesToNext = next.drivingFraction * dayMiles - milesFromStart;
         const gallonsNeeded = Math.min(
@@ -348,6 +351,7 @@ function DayMapInner({
           (milesToNext + FUEL_RESERVE_MILES) / vehicle.gasMileageMpg
         );
         gallonsToBuyForNextCheaper = Math.max(0, gallonsNeeded - gallonsRemaining);
+        costToBuyForNextCheaper = gallonsToBuyForNextCheaper * stop.avgPricePerGallon;
       }
 
       const chosenStrategy: "full" | "partial" =
@@ -364,9 +368,11 @@ function DayMapInner({
         arrivalRangeMiles,
         gallonsRemaining,
         tankPercent,
+        fillUpGallons,
         fillUpCost,
         cheaperAhead,
         gallonsToBuyForNextCheaper,
+        costToBuyForNextCheaper,
         chosenStrategy,
       };
       prevMiles = milesFromStart;
@@ -766,7 +772,7 @@ function DayMapInner({
                               handleFillStrategyChange(row.fuelStop!.city, "full")
                             }
                           />
-                          Fill up completely here: ~${plan.fillUpCost.toFixed(2)}
+                          Fill tank to full: ${plan.fillUpCost.toFixed(2)}, {plan.fillUpGallons.toFixed(1)} gal
                         </label>
                         <label className="flex items-center gap-2">
                           <input
@@ -777,13 +783,13 @@ function DayMapInner({
                               handleFillStrategyChange(row.fuelStop!.city, "partial")
                             }
                           />
-                          Next stop is cheaper — buy ~
-                          {plan.gallonsToBuyForNextCheaper!.toFixed(1)} gal here to reach it
-                          with reserve instead of filling up
+                          Min reserve to next fuel stop: ${plan.costToBuyForNextCheaper!.toFixed(2)}, {plan.gallonsToBuyForNextCheaper!.toFixed(1)} gal
                         </label>
                       </>
                     ) : (
-                      <p>Fill up completely here: ~${plan.fillUpCost.toFixed(2)}</p>
+                      <p>
+                        Fill tank to full: ${plan.fillUpCost.toFixed(2)}, {plan.fillUpGallons.toFixed(1)} gal
+                      </p>
                     )}
                   </div>
                 );
