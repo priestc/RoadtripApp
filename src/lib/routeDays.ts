@@ -14,6 +14,12 @@ export const MIN_LEG_HOURS = 4;
 export const LUNCH_THRESHOLD_HOURS = 4;
 /** A driving day longer than this also gets an automatic dinner stop. */
 export const DINNER_THRESHOLD_HOURS = 8;
+/** Fixed window lunch must fall within — not user-configurable. */
+export const LUNCH_WINDOW_START = "10:45";
+export const LUNCH_WINDOW_END = "14:00";
+/** Fixed window dinner must fall within — not user-configurable. */
+export const DINNER_WINDOW_START = "16:30";
+export const DINNER_WINDOW_END = "19:00";
 
 function timeStringToSeconds(time: string): number {
   const [hours, minutes] = time.split(":").map(Number);
@@ -225,6 +231,17 @@ export function getMealStopDurationSeconds(meal: MealStop): number {
   return (meal === "Lunch" ? LUNCH_DURATION_MINUTES : DINNER_DURATION_MINUTES) * 60;
 }
 
+function getMealWindowSeconds(meal: MealStop): { start: number; end: number } {
+  const [startTime, endTime] =
+    meal === "Lunch"
+      ? [LUNCH_WINDOW_START, LUNCH_WINDOW_END]
+      : [DINNER_WINDOW_START, DINNER_WINDOW_END];
+  return {
+    start: timeStringToSeconds(startTime),
+    end: timeStringToSeconds(endTime),
+  };
+}
+
 /**
  * Which meal stops a driving day gets, based purely on how long the day's
  * drive is. Breakfast isn't included here — it always happens before the
@@ -247,16 +264,24 @@ export interface DayItineraryStop {
 /**
  * Builds the full stop-by-stop itinerary for a driving day: departure, any
  * meal stops, and arrival, each with a clock time. Meal stops are spaced
- * evenly through the day's driving (e.g. with one meal stop, it falls at
- * the midpoint of the drive; with two, driving is split into thirds) and
- * their fixed durations (LUNCH_DURATION_MINUTES, DINNER_DURATION_MINUTES)
- * push every later time back — the day's total span is no longer just
- * driving time, it's driving time plus time spent at meal stops, which is
- * also what determines how far departure/arrival straddle the fixed
- * 11:00 AM checkout / 3:00 PM check-in anchors (see splitRouteIntoDays'
- * module doc for the straddle logic). This is a generic per-day estimate,
- * not tied to a real calendar date — full schedule tracking against actual
- * trip dates is future work.
+ * evenly through the day's driving to start (e.g. with one meal stop, it
+ * falls at the midpoint of the drive; with two, driving is split into
+ * thirds), then each meal's clock time is clamped into its fixed real-world
+ * window (LUNCH_WINDOW_START..END, DINNER_WINDOW_START..END) — lunch always
+ * lands between 10:45 AM and 2:00 PM, dinner between 4:30 PM and 7:00 PM,
+ * regardless of where the even split would otherwise put it. Whatever
+ * adjustment the clamp makes carries forward to every later stop, so the
+ * schedule stays internally consistent (a meal pushed later by its window
+ * pushes the rest of the day later too); the driving-path fraction used to
+ * geocode/place each stop is unaffected by clamping, since that's a
+ * position, not a time.
+ *
+ * Meal-stop durations (LUNCH_DURATION_MINUTES, DINNER_DURATION_MINUTES)
+ * are added at each stop, and departure/arrival straddle the fixed 11:00 AM
+ * checkout / 3:00 PM check-in anchors based on total driving + stop time
+ * (see splitRouteIntoDays' module doc for the straddle logic). This is a
+ * generic per-day estimate, not tied to a real calendar date — full
+ * schedule tracking against actual trip dates is future work.
  */
 export function buildDayItinerary(
   drivingDurationSeconds: number,
@@ -281,6 +306,10 @@ export function buildDayItinerary(
   for (const meal of mealStops) {
     driven += drivingPerSegment;
     clock += drivingPerSegment;
+
+    const { start, end } = getMealWindowSeconds(meal);
+    clock = Math.min(Math.max(clock, start), end);
+
     stops.push({
       label: meal,
       secondsSinceMidnight: clock,
