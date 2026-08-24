@@ -24,6 +24,7 @@ import {
   hasDinnerStop,
   milesToMeters,
   splitRouteIntoDays,
+  type DayItineraryStop,
   type LunchChoice,
   type RouteDaySegment,
 } from "@/lib/routeDays";
@@ -38,6 +39,11 @@ function pointAtFraction(
     day.path.length - 1
   );
   return day.path[index];
+}
+
+/** Departure and arrival are both a hotel from the map's point of view. */
+function mapMarkerLabel(label: DayItineraryStop["label"]): string {
+  return label === "Departure" || label === "Arrival" ? "Hotel" : label;
 }
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -366,7 +372,7 @@ function RouteMapInner({
                       glyphColor="#ffffff"
                     />
                     <span className="whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                      {stop.label}
+                      {mapMarkerLabel(stop.label)}
                     </span>
                   </div>
                 </AdvancedMarker>
