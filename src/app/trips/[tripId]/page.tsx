@@ -12,7 +12,7 @@ import RouteMap from "./RouteMap";
 export default function TripDetailPage() {
   const router = useRouter();
   const params = useParams<{ tripId: string }>();
-  const { user, authLoading } = useAuth();
+  const { user, authLoading, profile } = useAuth();
 
   const [trip, setTrip] = useState<Trip | null | undefined>(undefined);
 
@@ -69,7 +69,8 @@ export default function TripDetailPage() {
       <div className="w-full max-w-3xl space-y-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            {trip.departureLocation} → {trip.destination}
+            {describeDeparture(trip.departureLocation, profile?.homeAddress)} →{" "}
+            {trip.destination}
           </h1>
           <p className="mt-1 text-slate-500">{describeDeadline(trip)}</p>
         </div>
@@ -83,6 +84,16 @@ export default function TripDetailPage() {
       </div>
     </main>
   );
+}
+
+function describeDeparture(
+  departureLocation: string,
+  homeAddress: string | undefined
+): string {
+  if (homeAddress && departureLocation.trim() === homeAddress.trim()) {
+    return "Home";
+  }
+  return departureLocation;
 }
 
 function describeDeadline(trip: Trip): string {

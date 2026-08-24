@@ -42,16 +42,18 @@ Open `.env.local` and fill in each value from the `firebaseConfig` object you go
 
 ## 6. Set up Google Maps Platform (needed for the trip route map)
 
-Trip pages draw the driving route using the Google Maps JavaScript API and Directions API, and the home address field on the Preferences page uses the Places API for autocomplete. This is a different key from your Firebase config, though it can live in the same underlying Google Cloud project.
+Trip pages draw the driving route using the Google Maps JavaScript API and Directions API, look up the nearest city name for each day's start/end point using the Geocoding API, and the address fields (home address, trip destination/departure) use the Places API for autocomplete. This is a different key from your Firebase config, though it can live in the same underlying Google Cloud project.
 
 1. Go to the [Google Cloud console](https://console.cloud.google.com/) and select the project matching your Firebase project (Firebase projects are Google Cloud projects — pick the same project ID/name).
 2. **Enable billing** on this project: Maps Platform requires a billing account attached, even though Google gives a recurring monthly credit that covers light usage. Go to **Billing** in the left sidebar and link or create a billing account.
-3. Go to **APIs & Services → Library** and enable all three:
+3. Go to **APIs & Services → Library** and enable all five:
    - **Maps JavaScript API**
    - **Directions API**
    - **Places API**
+   - **Places API (New)** — required for the address autocomplete widget specifically; the legacy "Places API" widget hasn't been available to new Google Cloud projects since March 2025
+   - **Geocoding API**
 4. Go to **APIs & Services → Credentials → Create Credentials → API key**. Copy the generated key.
-5. (Recommended) Click into the new key and restrict it: under "API restrictions" limit it to just the three APIs above, and under "Application restrictions" limit it to your app's HTTP referrers (e.g. `localhost:3000/*`, and your production domain once you have one) so it can't be used elsewhere if it leaks.
+5. (Recommended) Click into the new key and restrict it: under "API restrictions" limit it to just the five APIs above, and under "Application restrictions" limit it to your app's HTTP referrers (e.g. `localhost:3000/*`, and your production domain once you have one) so it can't be used elsewhere if it leaks.
 6. Add it to `.env.local`:
 
 ```

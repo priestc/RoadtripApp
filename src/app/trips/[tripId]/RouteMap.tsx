@@ -67,6 +67,7 @@ function RouteMapInner({
 }) {
   const map = useMap();
   const routesLibrary = useMapsLibrary("routes");
+  const geocodingLibrary = useMapsLibrary("geocoding");
 
   const [leg, setLeg] = useState<google.maps.DirectionsLeg | null>(null);
   const [numDaysOverride, setNumDaysOverride] = useState<number | null>(null);
@@ -142,6 +143,38 @@ function RouteMapInner({
     onNumDaysChange(value);
   }
 
+  // Boundary points between days: [overall start, end of day 1 (= start of
+  // day 2), ..., overall end]. Geocoding just these (numDays + 1 points)
+  // instead of two per day avoids re-geocoding the same shared point twice.
+  const [boundaryCities, setBoundaryCities] = useState<(string | null)[] | null>(
+    null
+  );
+
+  useEffect(() => {
+    if (!days || !geocodingLibrary) return;
+    let cancelled = false;
+    const geocoder = new geocodingLibrary.Geocoder();
+    const boundaryPoints = [
+      days[0].path[0],
+      ...days.map((day) => day.path[day.path.length - 1]),
+    ];
+
+    Promise.all(
+      boundaryPoints.map((point) =>
+        geocoder
+          .geocode({ location: point })
+          .then((response) => extractCityName(response.results[0]))
+          .catch(() => null)
+      )
+    ).then((cities) => {
+      if (!cancelled) setBoundaryCities(cities);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [days, geocodingLibrary]);
+
   return (
     <div className="space-y-3">
       {maxDays !== null && numDays !== null && (
@@ -197,33 +230,48 @@ function RouteMapInner({
           {days.map((day, i) => {
             const { start, end } = estimateDayWindow(day.durationSeconds);
             const mealStops = getMealStops(day.durationSeconds);
+            // Only trust boundaryCities once it matches the current day
+            // count — it can briefly lag behind `days` after the dropdown
+            // changes, while the new geocode requests are still in flight.
+            const citiesMatchCurrentDays =
+              boundaryCities?.length === days.length + 1;
+            const startCity = citiesMatchCurrentDays
+              ? boundaryCities![i]
+              : null;
+            const endCity = citiesMatchCurrentDays
+              ? boundaryCities![i + 1]
+              : null;
             return (
-              <div
-                key={i}
-                className="flex items-center justify-between gap-3 px-4 py-2 text-sm"
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className="inline-block h-3 w-3 shrink-0 rounded-full"
-                    style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
-                  />
-                  <span className="font-medium text-slate-700">Day {i + 1}</span>
-                  {mealStops.map((meal) => (
+              <div key={i} className="px-4 py-2 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
                     <span
-                      key={meal}
-                      className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500"
-                    >
-                      {meal}
+                      className="inline-block h-3 w-3 shrink-0 rounded-full"
+                      style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
+                    />
+                    <span className="font-medium text-slate-700">Day {i + 1}</span>
+                    {mealStops.map((meal) => (
+                      <span
+                        key={meal}
+                        className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500"
+                      >
+                        {meal}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-4 text-slate-500">
+                    <span>{formatMiles(day.distanceMeters)}</span>
+                    <span>{formatDuration(day.durationSeconds)} driving</span>
+                    <span>
+                      {start} – {end}
                     </span>
-                  ))}
+                  </div>
                 </div>
-                <div className="flex gap-4 text-slate-500">
-                  <span>{formatMiles(day.distanceMeters)}</span>
-                  <span>{formatDuration(day.durationSeconds)} driving</span>
-                  <span>
-                    {start} – {end}
-                  </span>
-                </div>
+                {(startCity || endCity) && (
+                  <p className="mt-0.5 pl-5 text-xs text-slate-400">
+                    {startCity ?? "Unknown"} → {endCity ?? "Unknown"}
+                  </p>
+                )}
               </div>
             );
           })}
@@ -231,4 +279,25 @@ function RouteMapInner({
       )}
     </div>
   );
+}
+
+/** Pulls the nearest city-level name out of a geocoding result, falling
+ * back to progressively broader area types if there's no exact locality
+ * (e.g. a point out in the countryside). */
+function extractCityName(
+  result: google.maps.GeocoderResult | undefined
+): string | null {
+  if (!result) return null;
+  const candidateTypes = [
+    "locality",
+    "administrative_area_level_3",
+    "administrative_area_level_2",
+  ];
+  for (const type of candidateTypes) {
+    const component = result.address_components.find((c) =>
+      c.types.includes(type)
+    );
+    if (component) return component.long_name;
+  }
+  return null;
 }
