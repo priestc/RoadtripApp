@@ -38,6 +38,14 @@ import {
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
+/** Green for the cheapest price in the set, red for the priciest, and a
+ * hue-interpolated color in between for everything else. */
+function gasPriceColor(price: number, min: number, max: number): string {
+  const fraction = max > min ? (price - min) / (max - min) : 0;
+  const hue = 120 - fraction * 120;
+  return `hsl(${hue}, 70%, 45%)`;
+}
+
 export interface TripVehicle {
   gasMileageMpg: number;
   fuelCapacityGallons: number;
@@ -174,6 +182,7 @@ function DayMapInner({
   const [gasInfo, setGasInfo] = useState<{
     cheapest: CheapestGasStop | null;
     average: number | null;
+    byCity: CheapestGasStop[];
   } | null>(null);
   useEffect(() => {
     if (!day || dayHasDinner === null || !geometryLibrary) return;
@@ -185,6 +194,9 @@ function DayMapInner({
       cancelled = true;
     };
   }, [day, dayHasDinner, geometryLibrary]);
+
+  // Which set of markers the map currently shows.
+  const [markerMode, setMarkerMode] = useState<"stops" | "gas">("stops");
 
   // Current fuel range, entered fresh on each visit to this day (not
   // persisted -- it changes daily and isn't meaningful outside this page).
@@ -318,6 +330,31 @@ function DayMapInner({
         </p>
       </div>
 
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setMarkerMode("stops")}
+          className={`rounded-md border px-3 py-1.5 text-sm font-medium transition ${
+            markerMode === "stops"
+              ? "border-slate-700 bg-slate-700 text-white"
+              : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          Stops
+        </button>
+        <button
+          type="button"
+          onClick={() => setMarkerMode("gas")}
+          className={`rounded-md border px-3 py-1.5 text-sm font-medium transition ${
+            markerMode === "gas"
+              ? "border-slate-700 bg-slate-700 text-white"
+              : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          Gas
+        </button>
+      </div>
+
       <div className="h-80 overflow-hidden rounded-lg border border-slate-200">
         <Map
           mapId="roadtrip-day-map"
@@ -332,54 +369,51 @@ function DayMapInner({
             strokeOpacity={0.9}
             strokeWeight={5}
           />
-          {itinerary.map((stop, stopIndex) => (
-            <AdvancedMarker
-              key={stopIndex}
-              position={markerPosition(day, stop, initialLunchChoice)}
-              anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-            >
-              <div className="relative h-5 w-5">
-                <div
-                  className="h-5 w-5 rounded-full border-2 border-white shadow"
-                  style={{ backgroundColor: color }}
-                />
-                <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                  {mapMarkerLabel(stop.label)}
-                </span>
-              </div>
-            </AdvancedMarker>
-          ))}
-          {gasInfo?.cheapest && (
-            <AdvancedMarker
-              position={{ lat: gasInfo.cheapest.lat, lng: gasInfo.cheapest.lng }}
-              anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-            >
-              <div className="relative h-5 w-5">
-                <div
-                  className="h-5 w-5 rounded-full border-2 border-white shadow"
-                  style={{ backgroundColor: color }}
-                />
-                <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                  Cheapest gas
-                </span>
-              </div>
-            </AdvancedMarker>
-          )}
-          {maxDrivingFraction !== null && maxDrivingFraction > 0 && reachableGas && (
-            <AdvancedMarker
-              position={{ lat: reachableGas.lat, lng: reachableGas.lng }}
-              anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-            >
-              <div className="relative h-5 w-5">
-                <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-amber-500 text-[11px] shadow">
-                  <span aria-hidden>⛽</span>
+          {markerMode === "stops" &&
+            itinerary.map((stop, stopIndex) => (
+              <AdvancedMarker
+                key={stopIndex}
+                position={markerPosition(day, stop, initialLunchChoice)}
+                anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+              >
+                <div className="relative h-5 w-5">
+                  <div
+                    className="h-5 w-5 rounded-full border-2 border-white shadow"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                    {mapMarkerLabel(stop.label)}
+                  </span>
                 </div>
-                <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                  Gas within range
-                </span>
-              </div>
-            </AdvancedMarker>
-          )}
+              </AdvancedMarker>
+            ))}
+          {markerMode === "gas" &&
+            gasInfo &&
+            gasInfo.byCity.length > 0 &&
+            (() => {
+              const prices = gasInfo.byCity.map((c) => c.avgPricePerGallon);
+              const min = Math.min(...prices);
+              const max = Math.max(...prices);
+              return gasInfo.byCity.map((cityStop) => (
+                <AdvancedMarker
+                  key={cityStop.city}
+                  position={{ lat: cityStop.lat, lng: cityStop.lng }}
+                  anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                >
+                  <div className="relative h-5 w-5">
+                    <div
+                      className="h-5 w-5 rounded-full border-2 border-white shadow"
+                      style={{
+                        backgroundColor: gasPriceColor(cityStop.avgPricePerGallon, min, max),
+                      }}
+                    />
+                    <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                      {cityStop.city} — ${cityStop.avgPricePerGallon.toFixed(2)}
+                    </span>
+                  </div>
+                </AdvancedMarker>
+              ));
+            })()}
         </Map>
       </div>
 

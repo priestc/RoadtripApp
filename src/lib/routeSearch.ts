@@ -183,7 +183,8 @@ export interface CheapestGasStop {
 /** Searches for gas stations (with current pricing) along a single day's
  * full route, groups them by city, and returns that day's overall average
  * price (always computed across every station found, regardless of
- * `maxDrivingFraction`) plus whichever city has the cheapest average among
+ * `maxDrivingFraction`) plus every city's average price (`byCity`) and
+ * whichever has the cheapest average (`cheapest`), both restricted to
  * stations reachable within `maxDrivingFraction` (0..1) of the day's route —
  * 1 (the default) considers the whole day. */
 export async function searchGasForDay(
@@ -191,7 +192,11 @@ export async function searchGasForDay(
   day: RouteDaySegment,
   dayHasDinner: boolean,
   maxDrivingFraction: number = 1
-): Promise<{ cheapest: CheapestGasStop | null; average: number | null }> {
+): Promise<{
+  cheapest: CheapestGasStop | null;
+  average: number | null;
+  byCity: CheapestGasStop[];
+}> {
   const encodedPolyline = geometryLibrary.encoding.encodePath(day.path);
   let results: GasSearchResult[];
   try {
@@ -206,7 +211,7 @@ export async function searchGasForDay(
   }
 
   if (results.length === 0) {
-    return { cheapest: null, average: null };
+    return { cheapest: null, average: null, byCity: [] };
   }
 
   const average =
@@ -220,25 +225,23 @@ export async function searchGasForDay(
         );
 
   // Group by city (skipping stations whose city couldn't be determined --
-  // they can't be grouped) and average each city's prices, then find the
-  // cheapest city overall.
-  const byCity: Record<string, GasSearchResult[]> = {};
+  // they can't be grouped) and average each city's prices.
+  const byCityStations: Record<string, GasSearchResult[]> = {};
   for (const r of reachableResults) {
     if (!r.city) continue;
-    (byCity[r.city] ??= []).push(r);
+    (byCityStations[r.city] ??= []).push(r);
   }
 
-  let cheapest: CheapestGasStop | null = null;
-  for (const [city, stations] of Object.entries(byCity)) {
-    const cityAverage =
-      stations.reduce((sum, s) => sum + s.pricePerGallon, 0) / stations.length;
-    if (!cheapest || cityAverage < cheapest.avgPricePerGallon) {
+  const byCity: CheapestGasStop[] = Object.entries(byCityStations).map(
+    ([city, stations]) => {
+      const avgPricePerGallon =
+        stations.reduce((sum, s) => sum + s.pricePerGallon, 0) / stations.length;
       const lat = stations.reduce((sum, s) => sum + s.lat, 0) / stations.length;
       const lng = stations.reduce((sum, s) => sum + s.lng, 0) / stations.length;
       const drivingFraction = nearestFractionOnPath(day, { lat, lng });
-      cheapest = {
+      return {
         city,
-        avgPricePerGallon: cityAverage,
+        avgPricePerGallon,
         lat,
         lng,
         drivingFraction,
@@ -249,8 +252,13 @@ export async function searchGasForDay(
         ),
       };
     }
-  }
+  );
 
-  return { cheapest, average };
+  const cheapest = byCity.reduce<CheapestGasStop | null>(
+    (best, stop) => (!best || stop.avgPricePerGallon < best.avgPricePerGallon ? stop : best),
+    null
+  );
+
+  return { cheapest, average, byCity };
 }
 
