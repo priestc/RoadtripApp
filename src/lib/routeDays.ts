@@ -10,6 +10,9 @@ export const HOTEL_CHECKOUT_TIME = "11:00";
 export const HOTEL_CHECKIN_TIME = "15:00";
 /** Shortest sensible driving leg: checkout time to check-in time. */
 export const MIN_LEG_HOURS = 4;
+/** Miles of range to always keep in reserve — never plan a fill-up stop
+ * that would cut it closer than this. */
+export const FUEL_RESERVE_MILES = 30;
 /** A driving day longer than this gets an automatic dinner stop. */
 export const DINNER_THRESHOLD_HOURS = 8;
 /** Fixed window lunch must fall within — not user-configurable. */

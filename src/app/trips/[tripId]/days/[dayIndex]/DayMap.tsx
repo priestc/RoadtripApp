@@ -16,6 +16,7 @@ import {
   formatDuration,
   formatMiles,
   formatSecondsAsClockTime,
+  FUEL_RESERVE_MILES,
   getDefaultNumDays,
   getMaxDayOptions,
   getRouteDurationSeconds,
@@ -185,6 +186,53 @@ function DayMapInner({
     };
   }, [day, dayHasDinner, geometryLibrary]);
 
+  // Current fuel range, entered fresh on each visit to this day (not
+  // persisted -- it changes daily and isn't meaningful outside this page).
+  const [fuelRangeInput, setFuelRangeInput] = useState("");
+  const parsedFuelRange = Number(fuelRangeInput);
+  const fuelRangeMiles =
+    fuelRangeInput.trim() !== "" && !Number.isNaN(parsedFuelRange) && parsedFuelRange > 0
+      ? parsedFuelRange
+      : null;
+
+  // Fraction of the day's route reachable before dropping into the fixed
+  // reserve buffer -- null if no range has been entered yet.
+  const maxDrivingFraction = useMemo(() => {
+    if (!day || fuelRangeMiles === null) return null;
+    const dayMiles = metersToMiles(day.distanceMeters);
+    if (dayMiles <= 0) return 1;
+    const reachableMiles = Math.max(0, fuelRangeMiles - FUEL_RESERVE_MILES);
+    return Math.min(1, reachableMiles / dayMiles);
+  }, [day, fuelRangeMiles]);
+
+  // Undefined = not fetched (or not applicable) yet, null = fetched but
+  // nothing reachable, otherwise the cheapest reachable stop. Only
+  // meaningful when maxDrivingFraction is a positive number -- render logic
+  // below ignores a stale value from a previous fuel range otherwise.
+  const [reachableGas, setReachableGas] = useState<CheapestGasStop | null | undefined>(
+    undefined
+  );
+  useEffect(() => {
+    if (
+      !day ||
+      dayHasDinner === null ||
+      !geometryLibrary ||
+      maxDrivingFraction === null ||
+      maxDrivingFraction <= 0
+    ) {
+      return;
+    }
+    let cancelled = false;
+    searchGasForDay(geometryLibrary, day, dayHasDinner, maxDrivingFraction).then(
+      (result) => {
+        if (!cancelled) setReachableGas(result.cheapest);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [day, dayHasDinner, geometryLibrary, maxDrivingFraction]);
+
   const itinerary = useMemo(() => {
     if (!day || dayHasDinner === null) return null;
     const lunch = initialLunchChoice
@@ -244,6 +292,36 @@ function DayMapInner({
 
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <label
+          htmlFor="fuel-range"
+          className="block text-sm font-medium text-slate-700"
+        >
+          Current fuel range (mi)
+        </label>
+        <input
+          id="fuel-range"
+          type="number"
+          min={0}
+          step={1}
+          placeholder="e.g. 150"
+          value={fuelRangeInput}
+          onChange={(e) => setFuelRangeInput(e.target.value)}
+          className="mt-1 w-36 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none"
+        />
+        {fuelRangeMiles !== null && (
+          <p className="mt-2 text-xs text-slate-600">
+            {maxDrivingFraction !== null && maxDrivingFraction <= 0
+              ? `You're already within your ${FUEL_RESERVE_MILES}-mile reserve — refuel before continuing.`
+              : reachableGas === undefined
+                ? "Checking for gas within your range…"
+                : reachableGas
+                  ? `Cheapest gas within range: ${reachableGas.city} ($${reachableGas.avgPricePerGallon.toFixed(2)}/gal avg), arriving around ${formatSecondsAsClockTime(reachableGas.secondsSinceMidnight)}`
+                  : `No gas stations found before you'd hit your ${FUEL_RESERVE_MILES}-mile reserve.`}
+          </p>
+        )}
+      </div>
+
       <div className="h-80 overflow-hidden rounded-lg border border-slate-200">
         <Map
           mapId="roadtrip-day-map"
@@ -287,6 +365,21 @@ function DayMapInner({
                 />
                 <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
                   Cheapest gas
+                </span>
+              </div>
+            </AdvancedMarker>
+          )}
+          {maxDrivingFraction !== null && maxDrivingFraction > 0 && reachableGas && (
+            <AdvancedMarker
+              position={{ lat: reachableGas.lat, lng: reachableGas.lng }}
+              anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+            >
+              <div className="relative h-5 w-5">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-amber-500 text-[11px] shadow">
+                  <span aria-hidden>⛽</span>
+                </div>
+                <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                  Gas within range
                 </span>
               </div>
             </AdvancedMarker>

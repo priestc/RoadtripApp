@@ -182,11 +182,15 @@ export interface CheapestGasStop {
 
 /** Searches for gas stations (with current pricing) along a single day's
  * full route, groups them by city, and returns that day's overall average
- * price plus whichever city has the cheapest average. */
+ * price (always computed across every station found, regardless of
+ * `maxDrivingFraction`) plus whichever city has the cheapest average among
+ * stations reachable within `maxDrivingFraction` (0..1) of the day's route —
+ * 1 (the default) considers the whole day. */
 export async function searchGasForDay(
   geometryLibrary: google.maps.GeometryLibrary,
   day: RouteDaySegment,
-  dayHasDinner: boolean
+  dayHasDinner: boolean,
+  maxDrivingFraction: number = 1
 ): Promise<{ cheapest: CheapestGasStop | null; average: number | null }> {
   const encodedPolyline = geometryLibrary.encoding.encodePath(day.path);
   let results: GasSearchResult[];
@@ -208,11 +212,18 @@ export async function searchGasForDay(
   const average =
     results.reduce((sum, r) => sum + r.pricePerGallon, 0) / results.length;
 
+  const reachableResults =
+    maxDrivingFraction >= 1
+      ? results
+      : results.filter(
+          (r) => nearestFractionOnPath(day, { lat: r.lat, lng: r.lng }) <= maxDrivingFraction
+        );
+
   // Group by city (skipping stations whose city couldn't be determined --
   // they can't be grouped) and average each city's prices, then find the
   // cheapest city overall.
   const byCity: Record<string, GasSearchResult[]> = {};
-  for (const r of results) {
+  for (const r of reachableResults) {
     if (!r.city) continue;
     (byCity[r.city] ??= []).push(r);
   }
