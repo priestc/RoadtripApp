@@ -616,7 +616,7 @@ function DayMapInner({
               elements.push(
                 <div
                   key={i}
-                  className="grid grid-cols-[24px_1fr_auto] items-center gap-2 py-0.5 text-slate-600"
+                  className="grid grid-cols-[24px_1fr_auto_24px] items-center gap-2 py-0.5 text-slate-600"
                 >
                   <span className="text-center text-base" aria-hidden>
                     {stopIcon(row.label)}
@@ -625,22 +625,23 @@ function DayMapInner({
                     {row.label}
                     {row.detail ? ` — ${row.detail}` : ""}
                   </span>
-                  <span className="flex items-center gap-2 text-slate-500">
+                  <span className="text-slate-500">
                     {formatSecondsAsClockTime(row.secondsSinceMidnight)}
-                    {row.fuelStop && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onFuelStopsChange(
-                            initialFuelStops.filter((s) => s.city !== row.fuelStop!.city)
-                          )
-                        }
-                        className="text-xs text-red-500 hover:text-red-700"
-                      >
-                        Remove
-                      </button>
-                    )}
                   </span>
+                  {row.fuelStop && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onFuelStopsChange(
+                          initialFuelStops.filter((s) => s.city !== row.fuelStop!.city)
+                        )
+                      }
+                      aria-label={`Remove fuel stop at ${row.fuelStop.city}`}
+                      className="text-center text-red-500 hover:text-red-700"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               );
             });
