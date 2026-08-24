@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   AdvancedMarker,
@@ -43,6 +43,24 @@ const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 export interface TripVehicle {
   gasMileageMpg: number;
   fuelCapacityGallons: number;
+}
+
+/** Icon shown in the itinerary list's leftmost column for a given stop label. */
+function stopIcon(label: string): string {
+  switch (label) {
+    case "Departure":
+    case "Arrival":
+      return "🏨";
+    case "Lunch":
+    case "Dinner":
+      return "🍽️";
+    case "Fuel stop":
+      return "⛽";
+    case "Cheapest gas":
+      return "⛽";
+    default:
+      return "📍";
+  }
 }
 
 export default function RouteMap({
@@ -485,7 +503,7 @@ function RouteMapInner({
                   ) : null}
                 </div>
 
-                <div className="space-y-0.5 pl-5">
+                <div className="pl-5">
                   {(() => {
                     const rows = itinerary.map((stop) => {
                       let detail: string | null = null;
@@ -509,6 +527,7 @@ function RouteMapInner({
                         label: stop.label === "Fuel" ? "Fuel stop" : (stop.label as string),
                         detail,
                         secondsSinceMidnight: stop.secondsSinceMidnight,
+                        drivingFraction: stop.drivingFraction as number | null,
                       };
                     });
 
@@ -517,6 +536,7 @@ function RouteMapInner({
                         label: "Lunch",
                         detail: "Not chosen yet — click to pick a spot",
                         secondsSinceMidnight: -1,
+                        drivingFraction: null,
                       });
                     }
 
@@ -526,25 +546,54 @@ function RouteMapInner({
                         label: "Cheapest gas",
                         detail: `${gas.city} ($${gas.avgPricePerGallon.toFixed(2)}/gal avg)`,
                         secondsSinceMidnight: gas.secondsSinceMidnight,
+                        drivingFraction: gas.drivingFraction,
                       });
                     }
 
                     rows.sort((a, b) => a.secondsSinceMidnight - b.secondsSinceMidnight);
 
-                    return rows.map((row, rowIndex) => (
-                      <div
-                        key={rowIndex}
-                        className="flex items-center justify-between text-slate-500"
-                      >
-                        <span>
-                          {row.label}
-                          {row.detail ? ` — ${row.detail}` : ""}
-                        </span>
-                        {row.secondsSinceMidnight >= 0 && (
-                          <span>{formatSecondsAsClockTime(row.secondsSinceMidnight)}</span>
-                        )}
-                      </div>
-                    ));
+                    const elements: ReactNode[] = [];
+                    rows.forEach((row, rowIndex) => {
+                      if (rowIndex > 0) {
+                        const prev = rows[rowIndex - 1];
+                        if (prev.drivingFraction !== null && row.drivingFraction !== null) {
+                          const legMeters =
+                            (row.drivingFraction - prev.drivingFraction) * day.distanceMeters;
+                          const legSeconds =
+                            (row.drivingFraction - prev.drivingFraction) * day.durationSeconds;
+                          elements.push(
+                            <div
+                              key={`leg-${rowIndex}`}
+                              className="grid grid-cols-[20px_1fr] items-center gap-2 py-0.5 text-[11px] text-slate-400"
+                            >
+                              <span className="text-center">↓</span>
+                              <span>
+                                {formatMiles(legMeters)} · {formatDuration(legSeconds)}
+                              </span>
+                            </div>
+                          );
+                        }
+                      }
+                      elements.push(
+                        <div
+                          key={rowIndex}
+                          className="grid grid-cols-[20px_1fr_auto] items-center gap-2 py-0.5 text-slate-500"
+                        >
+                          <span className="text-center text-sm" aria-hidden>
+                            {stopIcon(row.label)}
+                          </span>
+                          <span>
+                            {row.label}
+                            {row.detail ? ` — ${row.detail}` : ""}
+                          </span>
+                          {row.secondsSinceMidnight >= 0 && (
+                            <span>{formatSecondsAsClockTime(row.secondsSinceMidnight)}</span>
+                          )}
+                        </div>
+                      );
+                    });
+
+                    return elements;
                   })()}
                 </div>
               </Link>

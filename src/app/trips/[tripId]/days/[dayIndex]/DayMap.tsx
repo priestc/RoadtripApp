@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AdvancedMarker,
   AdvancedMarkerAnchorPoint,
@@ -46,6 +46,22 @@ function gasPriceColor(price: number, min: number, max: number): string {
   const fraction = max > min ? (price - min) / (max - min) : 0;
   const hue = 120 - fraction * 120;
   return `hsl(${hue}, 70%, 45%)`;
+}
+
+/** Icon shown in the itinerary list's leftmost column for a given stop label. */
+function stopIcon(label: string): string {
+  switch (label) {
+    case "Departure":
+    case "Arrival":
+      return "🏨";
+    case "Lunch":
+    case "Dinner":
+      return "🍽️";
+    case "Fuel stop":
+      return "⛽";
+    default:
+      return "📍";
+  }
 }
 
 export interface TripVehicle {
@@ -547,7 +563,7 @@ function DayMapInner({
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-        <div className="space-y-0.5">
+        <div>
           {(() => {
             const rows = itinerary
               .filter((stop) => stop.label !== "Lunch" || initialLunchChoice)
@@ -571,36 +587,65 @@ function DayMapInner({
                   label: stop.label === "Fuel" ? "Fuel stop" : (stop.label as string),
                   detail,
                   secondsSinceMidnight: stop.secondsSinceMidnight,
+                  drivingFraction: stop.drivingFraction,
                   fuelStop,
                 };
               });
 
             rows.sort((a, b) => a.secondsSinceMidnight - b.secondsSinceMidnight);
 
-            return rows.map((row, i) => (
-              <div key={i} className="flex items-center justify-between text-slate-500">
-                <span>
-                  {row.label}
-                  {row.detail ? ` — ${row.detail}` : ""}
-                </span>
-                <span className="flex items-center gap-2">
-                  {formatSecondsAsClockTime(row.secondsSinceMidnight)}
-                  {row.fuelStop && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onFuelStopsChange(
-                          initialFuelStops.filter((s) => s.city !== row.fuelStop!.city)
-                        )
-                      }
-                      className="text-xs text-red-500 hover:text-red-700"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </span>
-              </div>
-            ));
+            const elements: ReactNode[] = [];
+            rows.forEach((row, i) => {
+              if (i > 0) {
+                const prev = rows[i - 1];
+                const legMeters = (row.drivingFraction - prev.drivingFraction) * day.distanceMeters;
+                const legSeconds =
+                  (row.drivingFraction - prev.drivingFraction) * day.durationSeconds;
+                elements.push(
+                  <div
+                    key={`leg-${i}`}
+                    className="grid grid-cols-[24px_1fr] items-center gap-2 py-1 text-xs text-slate-400"
+                  >
+                    <span className="text-center">↓</span>
+                    <span>
+                      {formatMiles(legMeters)} · {formatDuration(legSeconds)}
+                    </span>
+                  </div>
+                );
+              }
+              elements.push(
+                <div
+                  key={i}
+                  className="grid grid-cols-[24px_1fr_auto] items-center gap-2 py-0.5 text-slate-600"
+                >
+                  <span className="text-center text-base" aria-hidden>
+                    {stopIcon(row.label)}
+                  </span>
+                  <span>
+                    {row.label}
+                    {row.detail ? ` — ${row.detail}` : ""}
+                  </span>
+                  <span className="flex items-center gap-2 text-slate-500">
+                    {formatSecondsAsClockTime(row.secondsSinceMidnight)}
+                    {row.fuelStop && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onFuelStopsChange(
+                            initialFuelStops.filter((s) => s.city !== row.fuelStop!.city)
+                          )
+                        }
+                        className="text-xs text-red-500 hover:text-red-700"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </span>
+                </div>
+              );
+            });
+
+            return elements;
           })()}
         </div>
       </div>
