@@ -20,10 +20,17 @@ function timeStringToSeconds(time: string): number {
   return (hours || 0) * 3600 + (minutes || 0) * 60;
 }
 
-function formatSecondsAsClockTime(secondsSinceMidnight: number): string {
+export function formatSecondsAsClockTime(secondsSinceMidnight: number): string {
   const date = new Date(2000, 0, 1, 0, 0, 0);
   date.setSeconds(secondsSinceMidnight);
   return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function computeDepartureSeconds(totalElapsedSeconds: number): number {
+  const checkoutSeconds = timeStringToSeconds(HOTEL_CHECKOUT_TIME);
+  const minLegSeconds = MIN_LEG_HOURS * 3600;
+  const straddleSeconds = Math.max(0, totalElapsedSeconds - minLegSeconds) / 2;
+  return checkoutSeconds - straddleSeconds;
 }
 
 export function getRouteDurationSeconds(leg: google.maps.DirectionsLeg): number {
@@ -171,6 +178,15 @@ export function formatMiles(meters: number): string {
 
 export type MealStop = "Lunch" | "Dinner";
 
+/** How long a lunch stop takes. */
+export const LUNCH_DURATION_MINUTES = 45;
+/** How long a dinner stop takes. */
+export const DINNER_DURATION_MINUTES = 75;
+
+export function getMealStopDurationSeconds(meal: MealStop): number {
+  return (meal === "Lunch" ? LUNCH_DURATION_MINUTES : DINNER_DURATION_MINUTES) * 60;
+}
+
 /**
  * Which meal stops a driving day gets, based purely on how long the day's
  * drive is. Breakfast isn't included here — it always happens before the
@@ -183,32 +199,59 @@ export function getMealStops(durationSeconds: number): MealStop[] {
   return stops;
 }
 
+export interface DayItineraryStop {
+  label: "Departure" | MealStop | "Arrival";
+  secondsSinceMidnight: number;
+  /** 0..1 position along the day's driving path, for picking a point to reverse-geocode. */
+  drivingFraction: number;
+}
+
 /**
- * Estimates a departure/arrival clock-time window for a driving day,
- * always straddling the fixed 11:00 AM checkout / 3:00 PM check-in times
- * symmetrically: departure is X minutes before 11:00 AM and arrival is the
- * same X minutes after 3:00 PM, where X grows with how much driving the
- * day has beyond the 4-hour minimum leg. A day that's exactly the minimum
- * leg departs at 11:00 AM and arrives at 3:00 PM precisely (X = 0); a
- * longer day pushes departure and arrival out from those anchors by equal
- * amounts on each side. This is a generic per-day estimate, not tied to a
- * real calendar date — full schedule tracking against actual trip dates is
- * future work.
+ * Builds the full stop-by-stop itinerary for a driving day: departure, any
+ * meal stops, and arrival, each with a clock time. Meal stops are spaced
+ * evenly through the day's driving (e.g. with one meal stop, it falls at
+ * the midpoint of the drive; with two, driving is split into thirds) and
+ * their fixed durations (LUNCH_DURATION_MINUTES, DINNER_DURATION_MINUTES)
+ * push every later time back — the day's total span is no longer just
+ * driving time, it's driving time plus time spent at meal stops, which is
+ * also what determines how far departure/arrival straddle the fixed
+ * 11:00 AM checkout / 3:00 PM check-in anchors (see splitRouteIntoDays'
+ * module doc for the straddle logic). This is a generic per-day estimate,
+ * not tied to a real calendar date — full schedule tracking against actual
+ * trip dates is future work.
  */
-export function estimateDayWindow(durationSeconds: number): {
-  start: string;
-  end: string;
-} {
-  const checkoutSeconds = timeStringToSeconds(HOTEL_CHECKOUT_TIME);
-  const checkinSeconds = timeStringToSeconds(HOTEL_CHECKIN_TIME);
-  const minLegSeconds = MIN_LEG_HOURS * 3600;
+export function buildDayItinerary(
+  drivingDurationSeconds: number,
+  mealStops: MealStop[]
+): DayItineraryStop[] {
+  const totalStopSeconds = mealStops.reduce(
+    (sum, meal) => sum + getMealStopDurationSeconds(meal),
+    0
+  );
+  const totalElapsedSeconds = drivingDurationSeconds + totalStopSeconds;
+  const departureSeconds = computeDepartureSeconds(totalElapsedSeconds);
 
-  const straddleSeconds = Math.max(0, durationSeconds - minLegSeconds) / 2;
-  const departureSeconds = checkoutSeconds - straddleSeconds;
-  const arrivalSeconds = checkinSeconds + straddleSeconds;
+  const segments = mealStops.length + 1;
+  const drivingPerSegment = drivingDurationSeconds / segments;
 
-  return {
-    start: formatSecondsAsClockTime(departureSeconds),
-    end: formatSecondsAsClockTime(arrivalSeconds),
-  };
+  const stops: DayItineraryStop[] = [
+    { label: "Departure", secondsSinceMidnight: departureSeconds, drivingFraction: 0 },
+  ];
+
+  let clock = departureSeconds;
+  let driven = 0;
+  for (const meal of mealStops) {
+    driven += drivingPerSegment;
+    clock += drivingPerSegment;
+    stops.push({
+      label: meal,
+      secondsSinceMidnight: clock,
+      drivingFraction: driven / drivingDurationSeconds,
+    });
+    clock += getMealStopDurationSeconds(meal);
+  }
+  clock += drivingPerSegment;
+  stops.push({ label: "Arrival", secondsSinceMidnight: clock, drivingFraction: 1 });
+
+  return stops;
 }

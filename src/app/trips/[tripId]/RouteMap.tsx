@@ -10,10 +10,11 @@ import {
   useMapsLibrary,
 } from "@vis.gl/react-google-maps";
 import {
+  buildDayItinerary,
   DAY_COLORS,
-  estimateDayWindow,
   formatDuration,
   formatMiles,
+  formatSecondsAsClockTime,
   getDefaultNumDays,
   getMaxDayOptions,
   getMealStops,
@@ -143,37 +144,72 @@ function RouteMapInner({
     onNumDaysChange(value);
   }
 
+  // Which meal stops each day gets — kept as its own memo (rather than
+  // recomputed inline) so the geocoding effect and the render below always
+  // agree on the exact same itinerary shape.
+  const dayMealStops = useMemo(
+    () => days?.map((day) => getMealStops(day.durationSeconds)) ?? null,
+    [days]
+  );
+
   // Boundary points between days: [overall start, end of day 1 (= start of
   // day 2), ..., overall end]. Geocoding just these (numDays + 1 points)
   // instead of two per day avoids re-geocoding the same shared point twice.
   const [boundaryCities, setBoundaryCities] = useState<(string | null)[] | null>(
     null
   );
+  // Per day, one city name per meal stop, in the same order as that day's
+  // meal stops (e.g. [lunchCity] or [lunchCity, dinnerCity]).
+  const [mealCitiesByDay, setMealCitiesByDay] = useState<
+    (string | null)[][] | null
+  >(null);
 
   useEffect(() => {
-    if (!days || !geocodingLibrary) return;
+    if (!days || !dayMealStops || !geocodingLibrary) return;
     let cancelled = false;
     const geocoder = new geocodingLibrary.Geocoder();
+
+    const geocodeAll = (points: google.maps.LatLngLiteral[]) =>
+      Promise.all(
+        points.map((point) =>
+          geocoder
+            .geocode({ location: point })
+            .then((response) => extractCityName(response.results[0]))
+            .catch(() => null)
+        )
+      );
+
     const boundaryPoints = [
       days[0].path[0],
       ...days.map((day) => day.path[day.path.length - 1]),
     ];
 
-    Promise.all(
-      boundaryPoints.map((point) =>
-        geocoder
-          .geocode({ location: point })
-          .then((response) => extractCityName(response.results[0]))
-          .catch(() => null)
-      )
-    ).then((cities) => {
-      if (!cancelled) setBoundaryCities(cities);
+    const mealPointsByDay = days.map((day, i) => {
+      const itinerary = buildDayItinerary(day.durationSeconds, dayMealStops[i]);
+      return itinerary
+        .filter((stop) => stop.label === "Lunch" || stop.label === "Dinner")
+        .map((stop) => {
+          const pathIndex = Math.min(
+            Math.max(Math.round(stop.drivingFraction * (day.path.length - 1)), 0),
+            day.path.length - 1
+          );
+          return day.path[pathIndex];
+        });
+    });
+
+    Promise.all([
+      geocodeAll(boundaryPoints),
+      Promise.all(mealPointsByDay.map((points) => geocodeAll(points))),
+    ]).then(([boundaryResults, mealResults]) => {
+      if (cancelled) return;
+      setBoundaryCities(boundaryResults);
+      setMealCitiesByDay(mealResults);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [days, geocodingLibrary]);
+  }, [days, dayMealStops, geocodingLibrary]);
 
   return (
     <div className="space-y-3">
@@ -225,53 +261,62 @@ function RouteMapInner({
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {days && days.length > 0 && (
+      {days && days.length > 0 && dayMealStops && (
         <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
           {days.map((day, i) => {
-            const { start, end } = estimateDayWindow(day.durationSeconds);
-            const mealStops = getMealStops(day.durationSeconds);
-            // Only trust boundaryCities once it matches the current day
-            // count — it can briefly lag behind `days` after the dropdown
-            // changes, while the new geocode requests are still in flight.
-            const citiesMatchCurrentDays =
+            const mealStops = dayMealStops[i];
+            const itinerary = buildDayItinerary(day.durationSeconds, mealStops);
+
+            // Only trust the geocoded city arrays once they match the
+            // current day count — they can briefly lag behind `days` after
+            // the dropdown changes, while new geocode requests are in
+            // flight.
+            const boundaryCitiesReady =
               boundaryCities?.length === days.length + 1;
-            const startCity = citiesMatchCurrentDays
-              ? boundaryCities![i]
-              : null;
-            const endCity = citiesMatchCurrentDays
-              ? boundaryCities![i + 1]
-              : null;
+            const mealCitiesReady = mealCitiesByDay?.length === days.length;
+
+            let mealIndex = 0;
+
             return (
-              <div key={i} className="px-4 py-2 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="inline-block h-3 w-3 shrink-0 rounded-full"
-                      style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
-                    />
-                    <span className="font-medium text-slate-700">Day {i + 1}</span>
-                    {mealStops.map((meal) => (
-                      <span
-                        key={meal}
-                        className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500"
-                      >
-                        {meal}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex gap-4 text-slate-500">
-                    <span>{formatMiles(day.distanceMeters)}</span>
-                    <span>{formatDuration(day.durationSeconds)} driving</span>
-                    <span>
-                      {start} – {end}
-                    </span>
-                  </div>
+              <div key={i} className="px-4 py-3 text-sm">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span
+                    className="inline-block h-3 w-3 shrink-0 rounded-full"
+                    style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
+                  />
+                  <span className="font-medium text-slate-700">Day {i + 1}</span>
+                  <span className="text-slate-400">
+                    {formatMiles(day.distanceMeters)} ·{" "}
+                    {formatDuration(day.durationSeconds)} driving
+                  </span>
                 </div>
-                {(startCity || endCity) && (
-                  <p className="mt-0.5 pl-5 text-xs text-slate-400">
-                    {startCity ?? "Unknown"} → {endCity ?? "Unknown"}
-                  </p>
-                )}
+                <div className="space-y-0.5 pl-5">
+                  {itinerary.map((stop, stopIndex) => {
+                    let city: string | null = null;
+                    if (stop.label === "Departure") {
+                      city = boundaryCitiesReady ? boundaryCities![i] : null;
+                    } else if (stop.label === "Arrival") {
+                      city = boundaryCitiesReady ? boundaryCities![i + 1] : null;
+                    } else {
+                      city = mealCitiesReady
+                        ? mealCitiesByDay![i][mealIndex]
+                        : null;
+                      mealIndex += 1;
+                    }
+                    return (
+                      <div
+                        key={stopIndex}
+                        className="flex items-center justify-between text-slate-500"
+                      >
+                        <span>
+                          {stop.label}
+                          {city ? ` — ${city}` : ""}
+                        </span>
+                        <span>{formatSecondsAsClockTime(stop.secondsSinceMidnight)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             );
           })}
