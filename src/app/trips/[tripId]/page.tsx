@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
-import type { LunchChoice } from "@/lib/routeDays";
+import type { LunchSelection } from "@/lib/routeDays";
 import type { Trip, Vehicle } from "@/lib/types";
 import RouteMap from "./RouteMap";
 
@@ -116,7 +116,9 @@ export default function TripDetailPage() {
     });
   }
 
-  function handleLunchChoicesChange(lunchChoicesByDay: Array<LunchChoice | null>) {
+  function handleLunchChoicesChange(
+    lunchChoicesByDay: Array<LunchSelection | null>
+  ) {
     if (!params.tripId) return;
     updateDoc(doc(getFirebaseDb(), "trips", params.tripId), {
       lunchChoicesByDay,

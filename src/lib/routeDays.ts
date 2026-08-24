@@ -19,7 +19,7 @@ export const LUNCH_WINDOW_END = "14:00";
 export const DINNER_WINDOW_START = "16:30";
 export const DINNER_WINDOW_END = "19:00";
 
-function timeStringToSeconds(time: string): number {
+export function timeStringToSeconds(time: string): number {
   const [hours, minutes] = time.split(":").map(Number);
   return (hours || 0) * 3600 + (minutes || 0) * 60;
 }
@@ -243,55 +243,46 @@ function getMealWindowSeconds(meal: MealStop): { start: number; end: number } {
 /**
  * Whether a driving day gets an automatic dinner stop, based purely on how
  * long the day's drive is. Breakfast is never an in-route stop (it always
- * happens before the day's drive starts). Lunch is no longer automatic —
- * see getLunchCandidates below — the user picks whether and when.
+ * happens before the day's drive starts). Lunch is not automatic — the user
+ * picks a specific restaurant found via a search along the day's route (see
+ * the /api/places/lunch-search route), and its clock time is computed with
+ * secondsAtDrivingFraction below.
  */
 export function hasDinnerStop(durationSeconds: number): boolean {
   return durationSeconds > DINNER_THRESHOLD_HOURS * 3600;
 }
 
-export type LunchChoice = "early" | "late";
-
-export interface LunchCandidate {
-  drivingFraction: number;
-  secondsSinceMidnight: number;
+/**
+ * A day's baseline departure time — i.e. as if it had no lunch stop at all
+ * (though still with its automatic dinner, if any). Used as the reference
+ * point for converting a driving-path fraction into a clock time before a
+ * lunch stop has been chosen (once one is chosen, its own fixed time and
+ * position are used instead — see buildDayItinerary).
+ */
+export function getBaselineDepartureSeconds(
+  drivingDurationSeconds: number,
+  dayHasDinner: boolean
+): number {
+  const dinnerSeconds = dayHasDinner ? getMealStopDurationSeconds("Dinner") : 0;
+  return computeDepartureSeconds(drivingDurationSeconds + dinnerSeconds);
 }
 
 /**
- * The two lunch options offered for a day: "early" (the city you'd be in
- * right at the start of the lunch window, LUNCH_WINDOW_START) and "late"
- * (the city you'd be in right at the end of it, LUNCH_WINDOW_END), computed
- * against the day's baseline schedule — i.e. as if this day had no lunch
- * stop at all (though still with its automatic dinner, if any). Both
- * candidates are computed the same way regardless of which one ends up
- * chosen, so the options shown to the user don't shift depending on the
- * current selection.
+ * Converts a 0..1 position along a day's driving path into an estimated
+ * clock time, against that day's baseline (no-lunch) schedule — used to
+ * show an ETA for each restaurant found along the route before any lunch
+ * stop has been chosen.
  */
-export function getLunchCandidates(
+export function secondsAtDrivingFraction(
   drivingDurationSeconds: number,
-  dayHasDinner: boolean
-): { early: LunchCandidate; late: LunchCandidate } {
-  const dinnerSeconds = dayHasDinner ? getMealStopDurationSeconds("Dinner") : 0;
-  const baselineDeparture = computeDepartureSeconds(
-    drivingDurationSeconds + dinnerSeconds
+  dayHasDinner: boolean,
+  fraction: number
+): number {
+  const baselineDeparture = getBaselineDepartureSeconds(
+    drivingDurationSeconds,
+    dayHasDinner
   );
-  const window = getMealWindowSeconds("Lunch");
-
-  const candidateFor = (clockSeconds: number): LunchCandidate => ({
-    drivingFraction:
-      drivingDurationSeconds > 0
-        ? Math.min(
-            Math.max((clockSeconds - baselineDeparture) / drivingDurationSeconds, 0),
-            1
-          )
-        : 0,
-    secondsSinceMidnight: clockSeconds,
-  });
-
-  return {
-    early: candidateFor(window.start),
-    late: candidateFor(window.end),
-  };
+  return baselineDeparture + fraction * drivingDurationSeconds;
 }
 
 export interface DayItineraryStop {
@@ -301,29 +292,38 @@ export interface DayItineraryStop {
   drivingFraction: number;
 }
 
+/** A specific restaurant picked as a day's lunch stop, from the results of
+ * a search along that day's route. */
+export interface LunchSelection {
+  placeId: string;
+  name: string;
+  type: string;
+  drivingFraction: number;
+  secondsSinceMidnight: number;
+}
+
 /**
  * Builds the full stop-by-stop itinerary for a driving day: departure, an
- * optional lunch stop (only if the user picked one — see getLunchCandidates
- * for how "early"/"late" map to a city and time), an optional automatic
- * dinner stop, and arrival.
+ * optional lunch stop (only if the user picked a specific restaurant from
+ * the search-along-route results), an optional automatic dinner stop, and
+ * arrival.
  *
- * Lunch, when chosen, is pinned exactly to its candidate's time and
- * position — no further adjustment — since that's literally what the user
- * selected. Dinner, still automatic, is placed at the midpoint of whatever
- * driving remains after lunch (or the midpoint of the whole day if no lunch
- * was chosen) and then clamped into its fixed window
- * (DINNER_WINDOW_START..END), same as before. Meal-stop durations
- * (LUNCH_DURATION_MINUTES, DINNER_DURATION_MINUTES) are added at each stop,
- * and departure/arrival straddle the fixed 11:00 AM checkout / 3:00 PM
- * check-in anchors based on total driving + stop time (see
- * splitRouteIntoDays' module doc for the straddle logic). This is a generic
- * per-day estimate, not tied to a real calendar date — full schedule
- * tracking against actual trip dates is future work.
+ * Lunch, when chosen, is pinned exactly to its position/time — no further
+ * adjustment — since that's literally where the selected restaurant is.
+ * Dinner, still automatic, is placed at the midpoint of whatever driving
+ * remains after lunch (or the midpoint of the whole day if no lunch was
+ * chosen) and then clamped into its fixed window (DINNER_WINDOW_START..END).
+ * Meal-stop durations (LUNCH_DURATION_MINUTES, DINNER_DURATION_MINUTES) are
+ * added at each stop, and departure/arrival straddle the fixed 11:00 AM
+ * checkout / 3:00 PM check-in anchors based on total driving + stop time
+ * (see splitRouteIntoDays' module doc for the straddle logic). This is a
+ * generic per-day estimate, not tied to a real calendar date — full
+ * schedule tracking against actual trip dates is future work.
  */
 export function buildDayItinerary(
   drivingDurationSeconds: number,
   dayHasDinner: boolean,
-  lunch: { choice: LunchChoice; candidate: LunchCandidate } | null
+  lunch: { drivingFraction: number; secondsSinceMidnight: number } | null
 ): DayItineraryStop[] {
   const lunchSeconds = lunch ? getMealStopDurationSeconds("Lunch") : 0;
   const dinnerSeconds = dayHasDinner ? getMealStopDurationSeconds("Dinner") : 0;
@@ -338,8 +338,8 @@ export function buildDayItinerary(
   let drivenFraction = 0;
 
   if (lunch) {
-    clock = lunch.candidate.secondsSinceMidnight;
-    drivenFraction = lunch.candidate.drivingFraction;
+    clock = lunch.secondsSinceMidnight;
+    drivenFraction = lunch.drivingFraction;
     stops.push({
       label: "Lunch",
       secondsSinceMidnight: clock,
