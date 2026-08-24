@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AdvancedMarker,
+  AdvancedMarkerAnchorPoint,
   APIProvider,
   Map,
   Polyline,
@@ -67,6 +68,21 @@ function nearestFractionOnPath(
 /** Departure and arrival are both a hotel from the map's point of view. */
 function mapMarkerLabel(label: DayItineraryStop["label"]): string {
   return label === "Departure" || label === "Arrival" ? "Hotel" : label;
+}
+
+/** Where to actually place a stop's marker: the selected restaurant's real
+ * coordinates for a chosen Lunch stop (its drivingFraction is only an
+ * approximation used for ETA/geocoding, not its true location), otherwise
+ * the corresponding point along the day's route. */
+function markerPosition(
+  day: RouteDaySegment,
+  stop: DayItineraryStop,
+  selectedLunch: LunchSelection | null
+): google.maps.LatLngLiteral {
+  if (stop.label === "Lunch" && selectedLunch) {
+    return { lat: selectedLunch.lat, lng: selectedLunch.lng };
+  }
+  return pointAtFraction(day, stop.drivingFraction);
 }
 
 interface LunchSearchResult {
@@ -255,6 +271,8 @@ function RouteMapInner({
               placeId: r.placeId,
               name: r.name,
               type: r.type,
+              lat: r.lat,
+              lng: r.lng,
               drivingFraction,
               secondsSinceMidnight: secondsAtDrivingFraction(
                 day.durationSeconds,
@@ -426,33 +444,38 @@ function RouteMapInner({
           ))}
           {days &&
             dayItineraries &&
+            lunchChoices &&
             days.map((day, i) =>
               dayItineraries[i].map((stop, stopIndex) => (
                 <AdvancedMarker
                   key={`${i}-${stopIndex}`}
-                  position={pointAtFraction(day, stop.drivingFraction)}
+                  position={markerPosition(day, stop, lunchChoices[i])}
+                  anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
                 >
-                  <div className="flex flex-col items-center gap-0.5">
-                    <span className="whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                      {mapMarkerLabel(stop.label)}
-                    </span>
+                  <div className="relative h-5 w-5">
                     <div
                       className="h-5 w-5 rounded-full border-2 border-white shadow"
                       style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
                     />
+                    <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                      {mapMarkerLabel(stop.label)}
+                    </span>
                   </div>
                 </AdvancedMarker>
               ))
             )}
           {fillUpPoint && (
-            <AdvancedMarker position={fillUpPoint}>
-              <div className="flex flex-col items-center gap-0.5">
-                <span className="whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                  Fill up
-                </span>
+            <AdvancedMarker
+              position={fillUpPoint}
+              anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+            >
+              <div className="relative h-5 w-5">
                 <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-amber-500 text-[11px] shadow">
                   <span aria-hidden>⛽</span>
                 </div>
+                <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                  Fill up
+                </span>
               </div>
             </AdvancedMarker>
           )}

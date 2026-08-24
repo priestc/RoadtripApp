@@ -298,6 +298,9 @@ export interface LunchSelection {
   placeId: string;
   name: string;
   type: string;
+  /** The restaurant's actual coordinates, for placing its map marker exactly. */
+  lat: number;
+  lng: number;
   drivingFraction: number;
   secondsSinceMidnight: number;
 }
