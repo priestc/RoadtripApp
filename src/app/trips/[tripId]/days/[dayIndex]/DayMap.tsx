@@ -305,11 +305,6 @@ function DayMapInner({
             <> · {dayGallons.toFixed(1)} gal ({tankPercent.toFixed(0)}% of tank)</>
           )}
         </p>
-        {gasInfo?.average != null && (
-          <p className="text-lg text-slate-600">
-            Avg gas along this leg: ${gasInfo.average.toFixed(2)}/gal
-          </p>
-        )}
       </div>
 
       <div className="h-80 overflow-hidden rounded-lg border border-slate-200">
@@ -377,34 +372,50 @@ function DayMapInner({
         </Map>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <label
-          htmlFor="fuel-range"
-          className="block text-sm font-medium text-slate-700"
-        >
-          Current fuel range (mi)
-        </label>
-        <input
-          id="fuel-range"
-          type="number"
-          min={0}
-          step={1}
-          placeholder="e.g. 150"
-          value={fuelRangeInput}
-          onChange={(e) => setFuelRangeInput(e.target.value)}
-          className="mt-1 w-36 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none"
-        />
-        {fuelRangeMiles !== null && (
-          <p className="mt-2 text-xs text-slate-600">
-            {maxDrivingFraction !== null && maxDrivingFraction <= 0
-              ? `You're already within your ${FUEL_RESERVE_MILES}-mile reserve — refuel before continuing.`
-              : reachableGas === undefined
-                ? "Checking for gas within your range…"
-                : reachableGas
-                  ? `Cheapest gas within range: ${reachableGas.city} ($${reachableGas.avgPricePerGallon.toFixed(2)}/gal avg), arriving around ${formatSecondsAsClockTime(reachableGas.secondsSinceMidnight)}`
-                  : `No gas stations found before you'd hit your ${FUEL_RESERVE_MILES}-mile reserve.`}
+      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+        <p className="mb-2 text-sm font-medium text-slate-700">Gas</p>
+        {gasInfo?.average != null && (
+          <p className="text-slate-600">
+            Avg price along this leg: ${gasInfo.average.toFixed(2)}/gal
           </p>
         )}
+        {gasInfo?.cheapest && (
+          <p className="text-slate-600">
+            Cheapest gas: {gasInfo.cheapest.city} ($
+            {gasInfo.cheapest.avgPricePerGallon.toFixed(2)}/gal avg), arriving around{" "}
+            {formatSecondsAsClockTime(gasInfo.cheapest.secondsSinceMidnight)}
+          </p>
+        )}
+
+        <div className="mt-3">
+          <label
+            htmlFor="fuel-range"
+            className="block text-sm font-medium text-slate-700"
+          >
+            Current fuel range (mi)
+          </label>
+          <input
+            id="fuel-range"
+            type="number"
+            min={0}
+            step={1}
+            placeholder="e.g. 150"
+            value={fuelRangeInput}
+            onChange={(e) => setFuelRangeInput(e.target.value)}
+            className="mt-1 w-36 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none"
+          />
+          {fuelRangeMiles !== null && (
+            <p className="mt-2 text-xs text-slate-600">
+              {maxDrivingFraction !== null && maxDrivingFraction <= 0
+                ? `You're already within your ${FUEL_RESERVE_MILES}-mile reserve — refuel before continuing.`
+                : reachableGas === undefined
+                  ? "Checking for gas within your range…"
+                  : reachableGas
+                    ? `Cheapest gas within range: ${reachableGas.city} ($${reachableGas.avgPricePerGallon.toFixed(2)}/gal avg), arriving around ${formatSecondsAsClockTime(reachableGas.secondsSinceMidnight)}`
+                    : `No gas stations found before you'd hit your ${FUEL_RESERVE_MILES}-mile reserve.`}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
@@ -427,14 +438,6 @@ function DayMapInner({
                   secondsSinceMidnight: stop.secondsSinceMidnight,
                 };
               });
-
-            if (gasInfo?.cheapest) {
-              rows.push({
-                label: "Cheapest gas",
-                detail: `${gasInfo.cheapest.city} ($${gasInfo.cheapest.avgPricePerGallon.toFixed(2)}/gal avg)`,
-                secondsSinceMidnight: gasInfo.cheapest.secondsSinceMidnight,
-              });
-            }
 
             rows.sort((a, b) => a.secondsSinceMidnight - b.secondsSinceMidnight);
 
