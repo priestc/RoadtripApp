@@ -68,7 +68,6 @@ export default function DashboardPage() {
         </div>
 
         <dl className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-          <Row label="Earliest departure" value={profile.earliestDepartureTime} />
           <Row label="Breakfast" value={profile.breakfastTime ?? "Skipped"} />
           <Row label="Lunch" value={profile.lunchTime} />
           <Row label="Dinner" value={profile.dinnerTime} />

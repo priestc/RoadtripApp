@@ -27,12 +27,14 @@ export function getRouteDurationSeconds(leg: google.maps.DirectionsLeg): number 
 }
 
 /**
- * The largest number of days worth offering in the day-count dropdown:
- * however many 4-hour legs (the shortest sensible leg — checkout time to
- * check-in time) it takes to cover the whole route.
+ * The largest number of days worth offering in the day-count dropdown.
+ * Days are split evenly, so this is the largest N for which total/N is
+ * still at least the 4-hour minimum leg (checkout time to check-in time) —
+ * using ceil here instead would let the evenly-split max option produce
+ * days shorter than that floor.
  */
 export function getMaxDayOptions(totalDurationSeconds: number): number {
-  return Math.max(1, Math.ceil(totalDurationSeconds / (MIN_LEG_HOURS * 3600)));
+  return Math.max(1, Math.floor(totalDurationSeconds / (MIN_LEG_HOURS * 3600)));
 }
 
 /**
@@ -165,32 +167,27 @@ export function formatMiles(meters: number): string {
 
 /**
  * Estimates a departure/arrival clock-time window for a driving day,
- * straddling the departure and check-in windows in proportion to how much
- * driving the day actually has. It solves for the latest departure that
- * still arrives by hotel check-in time — i.e. leave only as early as this
- * day's drive actually requires, not out of habit — clamped between the
- * user's earliest-comfortable-departure preference and the fixed 11:00 AM
- * checkout time. In practice: a short day's departure clamps toward 11:00
- * AM and arrives well before check-in opens (both ends compressed toward
- * the middle of the day), while a long day pushes departure down to the
- * user's earliest-comfortable time and arrival out past check-in time.
- * This is a generic per-day estimate, not tied to a real calendar date —
- * full schedule tracking against actual trip dates is future work.
+ * always straddling the fixed 11:00 AM checkout / 3:00 PM check-in times
+ * symmetrically: departure is X minutes before 11:00 AM and arrival is the
+ * same X minutes after 3:00 PM, where X grows with how much driving the
+ * day has beyond the 4-hour minimum leg. A day that's exactly the minimum
+ * leg departs at 11:00 AM and arrives at 3:00 PM precisely (X = 0); a
+ * longer day pushes departure and arrival out from those anchors by equal
+ * amounts on each side. This is a generic per-day estimate, not tied to a
+ * real calendar date — full schedule tracking against actual trip dates is
+ * future work.
  */
-export function estimateDayWindow(
-  durationSeconds: number,
-  earliestDepartureTime: string
-): { start: string; end: string } {
-  const earliestDepartureSeconds = timeStringToSeconds(earliestDepartureTime);
-  const latestDepartureSeconds = timeStringToSeconds(HOTEL_CHECKOUT_TIME);
-  const earliestStoppingSeconds = timeStringToSeconds(HOTEL_CHECKIN_TIME);
+export function estimateDayWindow(durationSeconds: number): {
+  start: string;
+  end: string;
+} {
+  const checkoutSeconds = timeStringToSeconds(HOTEL_CHECKOUT_TIME);
+  const checkinSeconds = timeStringToSeconds(HOTEL_CHECKIN_TIME);
+  const minLegSeconds = MIN_LEG_HOURS * 3600;
 
-  const idealDepartureSeconds = earliestStoppingSeconds - durationSeconds;
-  const departureSeconds = Math.min(
-    Math.max(idealDepartureSeconds, earliestDepartureSeconds),
-    latestDepartureSeconds
-  );
-  const arrivalSeconds = departureSeconds + durationSeconds;
+  const straddleSeconds = Math.max(0, durationSeconds - minLegSeconds) / 2;
+  const departureSeconds = checkoutSeconds - straddleSeconds;
+  const arrivalSeconds = checkinSeconds + straddleSeconds;
 
   return {
     start: formatSecondsAsClockTime(departureSeconds),

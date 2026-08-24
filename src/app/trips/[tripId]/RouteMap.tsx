@@ -25,13 +25,11 @@ const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 export default function RouteMap({
   departureLocation,
   destination,
-  earliestDepartureTime,
   initialNumDays,
   onNumDaysChange,
 }: {
   departureLocation: string;
   destination: string;
-  earliestDepartureTime: string;
   initialNumDays?: number;
   onNumDaysChange: (numDays: number) => void;
 }) {
@@ -48,7 +46,6 @@ export default function RouteMap({
       <RouteMapInner
         departureLocation={departureLocation}
         destination={destination}
-        earliestDepartureTime={earliestDepartureTime}
         initialNumDays={initialNumDays}
         onNumDaysChange={onNumDaysChange}
       />
@@ -59,13 +56,11 @@ export default function RouteMap({
 function RouteMapInner({
   departureLocation,
   destination,
-  earliestDepartureTime,
   initialNumDays,
   onNumDaysChange,
 }: {
   departureLocation: string;
   destination: string;
-  earliestDepartureTime: string;
   initialNumDays?: number;
   onNumDaysChange: (numDays: number) => void;
 }) {
@@ -199,10 +194,7 @@ function RouteMapInner({
       {days && days.length > 0 && (
         <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
           {days.map((day, i) => {
-            const { start, end } = estimateDayWindow(
-              day.durationSeconds,
-              earliestDepartureTime
-            );
+            const { start, end } = estimateDayWindow(day.durationSeconds);
             return (
               <div
                 key={i}

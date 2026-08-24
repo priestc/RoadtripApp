@@ -1,5 +1,4 @@
 export interface DrivingPreferences {
-  earliestDepartureTime: string; // "HH:MM", 24-hour
   breakfastTime: string | null;
   lunchTime: string;
   dinnerTime: string;

@@ -12,7 +12,7 @@ import RouteMap from "./RouteMap";
 export default function TripDetailPage() {
   const router = useRouter();
   const params = useParams<{ tripId: string }>();
-  const { user, authLoading, profile, profileLoading } = useAuth();
+  const { user, authLoading } = useAuth();
 
   const [trip, setTrip] = useState<Trip | null | undefined>(undefined);
 
@@ -39,7 +39,7 @@ export default function TripDetailPage() {
     return unsubscribe;
   }, [user, params.tripId]);
 
-  if (authLoading || !user || profileLoading || trip === undefined) {
+  if (authLoading || !user || trip === undefined) {
     return (
       <main className="flex flex-1 items-center justify-center">
         <p className="text-slate-500">Loading…</p>
@@ -77,7 +77,6 @@ export default function TripDetailPage() {
         <RouteMap
           departureLocation={trip.departureLocation}
           destination={trip.destination}
-          earliestDepartureTime={profile?.earliestDepartureTime ?? "07:00"}
           initialNumDays={trip.numDrivingDays}
           onNumDaysChange={handleNumDaysChange}
         />

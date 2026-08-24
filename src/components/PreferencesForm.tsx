@@ -3,14 +3,12 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 
 export interface PreferencesFormValues {
-  earliestDepartureTime: string;
   breakfastTime: string | null;
   lunchTime: string;
   dinnerTime: string;
 }
 
 const DEFAULTS: PreferencesFormValues = {
-  earliestDepartureTime: "07:00",
   breakfastTime: "08:00",
   lunchTime: "12:30",
   dinnerTime: "18:30",
@@ -29,9 +27,6 @@ export function PreferencesForm({
 }: PreferencesFormProps) {
   const merged = { ...DEFAULTS, ...initialValues };
 
-  const [earliestDepartureTime, setEarliestDepartureTime] = useState(
-    merged.earliestDepartureTime
-  );
   const [skipBreakfast, setSkipBreakfast] = useState(
     merged.breakfastTime === null
   );
@@ -50,7 +45,6 @@ export function PreferencesForm({
     setSaving(true);
     try {
       await onSubmit({
-        earliestDepartureTime,
         breakfastTime: skipBreakfast ? null : breakfastTime,
         lunchTime,
         dinnerTime,
@@ -64,21 +58,6 @@ export function PreferencesForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
-      <Field label="Earliest you want to leave">
-        <input
-          type="time"
-          required
-          value={earliestDepartureTime}
-          onChange={(e) => setEarliestDepartureTime(e.target.value)}
-          className={inputClass}
-        />
-        <Hint>
-          How early you&apos;re willing to depart. Hotel checkout (11:00 AM)
-          and check-in (3:00 PM) are fixed and used to plan each day&apos;s
-          drive.
-        </Hint>
-      </Field>
-
       <fieldset className="space-y-4">
         <legend className="text-sm font-medium text-slate-700">
           Typical mealtimes
