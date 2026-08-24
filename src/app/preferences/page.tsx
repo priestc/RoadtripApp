@@ -11,11 +11,13 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
 import { Field, Hint, inputClass } from "@/components/FormControls";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 import type { Vehicle } from "@/lib/types";
 
 export default function PreferencesPage() {
@@ -62,8 +64,12 @@ export default function PreferencesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">
             Preferences
           </h1>
-          <p className="mt-1 text-slate-500">Manage your vehicles.</p>
+          <p className="mt-1 text-slate-500">
+            Manage your home address and vehicles.
+          </p>
         </div>
+
+        <HomeAddressSection userId={user.uid} homeAddress={profile.homeAddress} />
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
           <p className="font-medium text-slate-700">Meal stops are automatic</p>
@@ -82,6 +88,67 @@ export default function PreferencesPage() {
         />
       </div>
     </main>
+  );
+}
+
+function HomeAddressSection({
+  userId,
+  homeAddress,
+}: {
+  userId: string;
+  homeAddress?: string;
+}) {
+  const [address, setAddress] = useState(homeAddress ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setError(null);
+    setSaved(false);
+    setSaving(true);
+    try {
+      await setDoc(
+        doc(getFirebaseDb(), "users", userId),
+        { homeAddress: address },
+        { merge: true }
+      );
+      setSaved(true);
+    } catch {
+      setError("Couldn't save your home address. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <h2 className="text-lg font-semibold tracking-tight">Home address</h2>
+      <p className="text-sm text-slate-500">
+        Used as the default departure location for new trips.
+      </p>
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <AddressAutocomplete
+            value={address}
+            onChange={(value) => {
+              setAddress(value);
+              setSaved(false);
+            }}
+            placeholder="123 Main St, Anytown, USA"
+          />
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {saved && <p className="text-sm text-green-600">Saved.</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
+    </div>
   );
 }
 
