@@ -4,7 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
 import type { Trip } from "@/lib/types";
@@ -46,6 +53,11 @@ export default function DashboardPage() {
     return unsubscribe;
   }, [user]);
 
+  async function handleDeleteTrip(tripId: string) {
+    if (!confirm("Delete this trip? This can't be undone.")) return;
+    await deleteDoc(doc(getFirebaseDb(), "trips", tripId));
+  }
+
   if (authLoading || !user || profileLoading || !profile?.onboardingComplete) {
     return (
       <main className="flex flex-1 items-center justify-center">
@@ -85,10 +97,10 @@ export default function DashboardPage() {
           ) : (
             <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
               {trips.map((trip) => (
-                <li key={trip.id}>
+                <li key={trip.id} className="flex items-center">
                   <Link
                     href={`/trips/${trip.id}`}
-                    className="block px-4 py-3 transition hover:bg-slate-50"
+                    className="block flex-1 px-4 py-3 transition hover:bg-slate-50"
                   >
                     <p className="font-medium text-slate-900">
                       {trip.departureLocation} → {trip.destination}
@@ -101,6 +113,12 @@ export default function DashboardPage() {
                           : "Soft target"}
                     </p>
                   </Link>
+                  <button
+                    onClick={() => handleDeleteTrip(trip.id)}
+                    className="px-4 py-3 text-sm font-medium text-red-600 hover:text-red-700"
+                  >
+                    Delete
+                  </button>
                 </li>
               ))}
             </ul>
