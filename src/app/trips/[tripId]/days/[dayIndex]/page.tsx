@@ -29,6 +29,10 @@ export default function DayDetailPage() {
 
   const [trip, setTrip] = useState<Trip | null | undefined>(undefined);
   const [vehicles, setVehicles] = useState<Array<Vehicle & { id: string }>>([]);
+  const [boundaryCities, setBoundaryCities] = useState<{
+    start: string | null;
+    end: string | null;
+  } | null>(null);
 
   const dayIndex = Number(params.dayIndex);
 
@@ -133,8 +137,10 @@ export default function DayDetailPage() {
             Day {dayIndex + 1}
           </h1>
           <p className="mt-1 text-slate-500">
-            {describeDeparture(trip.departureLocation, profile?.homeAddress)} →{" "}
-            {trip.destination}
+            {dayIndex === 0
+              ? describeDeparture(trip.departureLocation, profile?.homeAddress)
+              : (boundaryCities?.start ?? "…")}{" "}
+            → {boundaryCities?.end ?? "…"}
           </p>
         </div>
 
@@ -147,6 +153,7 @@ export default function DayDetailPage() {
           onLunchChoiceChange={handleLunchChoiceChange}
           initialFuelStops={initialFuelStops}
           onFuelStopsChange={handleFuelStopsChange}
+          onBoundaryCitiesChange={setBoundaryCities}
           vehicle={
             selectedVehicle
               ? {

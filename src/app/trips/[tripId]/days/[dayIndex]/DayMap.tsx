@@ -78,6 +78,7 @@ export default function DayMap({
   onLunchChoiceChange,
   initialFuelStops,
   onFuelStopsChange,
+  onBoundaryCitiesChange,
   vehicle,
 }: {
   dayIndex: number;
@@ -88,6 +89,7 @@ export default function DayMap({
   onLunchChoiceChange: (choice: LunchSelection | null) => void;
   initialFuelStops: FuelStopSelection[];
   onFuelStopsChange: (stops: FuelStopSelection[]) => void;
+  onBoundaryCitiesChange?: (cities: { start: string | null; end: string | null }) => void;
   vehicle: TripVehicle | null;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
@@ -109,6 +111,7 @@ export default function DayMap({
         onLunchChoiceChange={onLunchChoiceChange}
         initialFuelStops={initialFuelStops}
         onFuelStopsChange={onFuelStopsChange}
+        onBoundaryCitiesChange={onBoundaryCitiesChange}
         vehicle={vehicle}
       />
     </APIProvider>
@@ -124,6 +127,7 @@ function DayMapInner({
   onLunchChoiceChange,
   initialFuelStops,
   onFuelStopsChange,
+  onBoundaryCitiesChange,
   vehicle,
 }: {
   dayIndex: number;
@@ -134,6 +138,7 @@ function DayMapInner({
   onLunchChoiceChange: (choice: LunchSelection | null) => void;
   initialFuelStops: FuelStopSelection[];
   onFuelStopsChange: (stops: FuelStopSelection[]) => void;
+  onBoundaryCitiesChange?: (cities: { start: string | null; end: string | null }) => void;
   vehicle: TripVehicle | null;
 }) {
   const map = useMap();
@@ -425,12 +430,13 @@ function DayMapInner({
       if (cancelled) return;
       setBoundaryCities({ start, end });
       setDinnerCity(dinner);
+      onBoundaryCitiesChange?.({ start, end });
     });
 
     return () => {
       cancelled = true;
     };
-  }, [day, itinerary, geocodingLibrary]);
+  }, [day, itinerary, geocodingLibrary, onBoundaryCitiesChange]);
 
   if (error) {
     return <p className="text-sm text-red-600">{error}</p>;
