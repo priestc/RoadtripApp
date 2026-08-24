@@ -4,11 +4,20 @@ export interface RouteDaySegment {
   distanceMeters: number;
 }
 
+function timeStringToSeconds(time: string): number {
+  const [hours, minutes] = time.split(":").map(Number);
+  return (hours || 0) * 3600 + (minutes || 0) * 60;
+}
+
 /**
- * Splits a computed driving route into per-day segments based on a max
- * driving-hours-per-day preference. The total drive time is divided evenly
- * across however many days it takes to stay under the max, so every day
- * ends up with a similar amount of driving.
+ * Splits a computed driving route into per-day segments. Every day except
+ * the last is driven up to a daily target — whichever comes first between
+ * the max-comfortable-driving-hours preference and the window from the
+ * earliest-departure time to the earliest-comfortable-stopping time (the
+ * point hotels typically allow check-in). Stopping earlier than that floor
+ * just wastes comfortable driving time for no benefit, since you can't
+ * check in yet anyway. Only the final day — arriving at the actual
+ * destination, not an overnight stop — is allowed to come up short.
  *
  * Long highway routes often have only a handful of Directions API "steps"
  * (e.g. a single "Continue on I-10 E for 300 mi" step can span several
@@ -21,24 +30,33 @@ export interface RouteDaySegment {
  */
 export function splitRouteIntoDays(
   leg: google.maps.DirectionsLeg,
-  maxDrivingHoursPerDay: number
+  preferences: {
+    maxDrivingHoursPerDay: number;
+    earliestDepartureTime: string;
+    earliestStoppingTime: string;
+  }
 ): RouteDaySegment[] {
-  const maxDayLengthSeconds = (maxDrivingHoursPerDay || 8) * 3600;
+  const maxDaySeconds = (preferences.maxDrivingHoursPerDay || 8) * 3600;
+  const windowSeconds =
+    timeStringToSeconds(preferences.earliestStoppingTime) -
+    timeStringToSeconds(preferences.earliestDepartureTime);
+  const dailyTargetSeconds =
+    windowSeconds > 0 ? Math.min(maxDaySeconds, windowSeconds) : maxDaySeconds;
+
   const totalDurationSeconds = leg.steps.reduce(
     (sum, step) => sum + (step.duration?.value ?? 0),
     0
   );
   const numDays = Math.max(
     1,
-    Math.ceil(totalDurationSeconds / maxDayLengthSeconds)
+    Math.ceil(totalDurationSeconds / dailyTargetSeconds)
   );
-  const targetDayLengthSeconds = totalDurationSeconds / numDays;
 
   const days: RouteDaySegment[] = [];
   let currentPath: google.maps.LatLngLiteral[] = [];
   let currentDaySeconds = 0;
   let currentDayMeters = 0;
-  let dayBoundarySeconds = targetDayLengthSeconds;
+  let dayBoundarySeconds = dailyTargetSeconds;
   let elapsedSeconds = 0;
 
   function finishDay() {
@@ -51,7 +69,7 @@ export function splitRouteIntoDays(
     currentPath = lastPoint ? [lastPoint] : [];
     currentDaySeconds = 0;
     currentDayMeters = 0;
-    dayBoundarySeconds += targetDayLengthSeconds;
+    dayBoundarySeconds += dailyTargetSeconds;
   }
 
   for (const step of leg.steps) {

@@ -25,11 +25,13 @@ export default function RouteMap({
   destination,
   maxDrivingHoursPerDay,
   earliestDepartureTime,
+  earliestStoppingTime,
 }: {
   departureLocation: string;
   destination: string;
   maxDrivingHoursPerDay: number;
   earliestDepartureTime: string;
+  earliestStoppingTime: string;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
     return (
@@ -46,6 +48,7 @@ export default function RouteMap({
         destination={destination}
         maxDrivingHoursPerDay={maxDrivingHoursPerDay}
         earliestDepartureTime={earliestDepartureTime}
+        earliestStoppingTime={earliestStoppingTime}
       />
     </APIProvider>
   );
@@ -56,11 +59,13 @@ function RouteMapInner({
   destination,
   maxDrivingHoursPerDay,
   earliestDepartureTime,
+  earliestStoppingTime,
 }: {
   departureLocation: string;
   destination: string;
   maxDrivingHoursPerDay: number;
   earliestDepartureTime: string;
+  earliestStoppingTime: string;
 }) {
   const map = useMap();
   const routesLibrary = useMapsLibrary("routes");
@@ -89,7 +94,13 @@ function RouteMapInner({
           setError("Couldn't find a route between these locations.");
           return;
         }
-        setDays(splitRouteIntoDays(leg, maxDrivingHoursPerDay));
+        setDays(
+          splitRouteIntoDays(leg, {
+            maxDrivingHoursPerDay,
+            earliestDepartureTime,
+            earliestStoppingTime,
+          })
+        );
         setEndpoints({
           start: { lat: leg.start_location.lat(), lng: leg.start_location.lng() },
           end: { lat: leg.end_location.lat(), lng: leg.end_location.lng() },
@@ -104,7 +115,15 @@ function RouteMapInner({
       .catch(() => {
         setError("Couldn't calculate a route between these locations.");
       });
-  }, [routesLibrary, map, departureLocation, destination, maxDrivingHoursPerDay]);
+  }, [
+    routesLibrary,
+    map,
+    departureLocation,
+    destination,
+    maxDrivingHoursPerDay,
+    earliestDepartureTime,
+    earliestStoppingTime,
+  ]);
 
   return (
     <div className="space-y-3">

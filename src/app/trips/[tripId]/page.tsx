@@ -70,6 +70,7 @@ export default function TripDetailPage() {
           destination={trip.destination}
           maxDrivingHoursPerDay={profile?.maxDrivingHoursPerDay ?? 8}
           earliestDepartureTime={profile?.earliestDepartureTime ?? "08:00"}
+          earliestStoppingTime={profile?.earliestStoppingTime ?? "15:00"}
         />
       </div>
     </main>
