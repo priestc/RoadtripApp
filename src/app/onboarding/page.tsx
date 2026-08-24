@@ -1,19 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, setDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
-import {
-  PreferencesForm,
-  type PreferencesFormValues,
-} from "@/components/PreferencesForm";
 import type { DrivingPreferences } from "@/lib/types";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const { user, authLoading, profile, profileLoading } = useAuth();
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -26,12 +23,10 @@ export default function OnboardingPage() {
     }
   }, [authLoading, user, profile, profileLoading, router]);
 
-  async function handleSubmit(values: PreferencesFormValues) {
+  async function handleContinue() {
     if (!user) return;
-    const preferences: DrivingPreferences = {
-      ...values,
-      onboardingComplete: true,
-    };
+    setSaving(true);
+    const preferences: DrivingPreferences = { onboardingComplete: true };
     await setDoc(doc(getFirebaseDb(), "users", user.uid), preferences);
     router.replace("/dashboard");
   }
@@ -45,20 +40,25 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="flex flex-1 justify-center px-4 py-12">
-      <div className="w-full max-w-lg space-y-8">
+    <main className="flex flex-1 items-center justify-center px-4 py-12">
+      <div className="w-full max-w-lg space-y-8 text-center">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Let&apos;s set up your driving preferences
+            Welcome to RoadtripApp
           </h1>
           <p className="mt-1 text-slate-500">
-            This helps RoadtripApp plan stops and days that fit how you
-            actually like to drive. You can change these any time from
-            Preferences.
+            Let&apos;s plan your first trip. You can add vehicles and a home
+            address any time from Preferences.
           </p>
         </div>
 
-        <PreferencesForm onSubmit={handleSubmit} submitLabel="Save and continue" />
+        <button
+          onClick={handleContinue}
+          disabled={saving}
+          className="w-full rounded-lg bg-slate-900 px-4 py-3 font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
+        >
+          {saving ? "Getting started…" : "Continue"}
+        </button>
       </div>
     </main>
   );

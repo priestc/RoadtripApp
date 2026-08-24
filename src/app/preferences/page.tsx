@@ -11,18 +11,11 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
-import {
-  PreferencesForm,
-  type PreferencesFormValues,
-  Field,
-  Hint,
-  inputClass,
-} from "@/components/PreferencesForm";
+import { Field, Hint, inputClass } from "@/components/FormControls";
 import type { Vehicle } from "@/lib/types";
 
 export default function PreferencesPage() {
@@ -54,13 +47,6 @@ export default function PreferencesPage() {
     return unsubscribe;
   }, [user]);
 
-  async function handleSavePreferences(values: PreferencesFormValues) {
-    if (!user) return;
-    await setDoc(doc(getFirebaseDb(), "users", user.uid), values, {
-      merge: true,
-    });
-  }
-
   if (authLoading || !user || profileLoading || !profile) {
     return (
       <main className="flex flex-1 items-center justify-center">
@@ -76,16 +62,18 @@ export default function PreferencesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">
             Preferences
           </h1>
-          <p className="mt-1 text-slate-500">
-            Update your driving preferences and manage your vehicles.
-          </p>
+          <p className="mt-1 text-slate-500">Manage your vehicles.</p>
         </div>
 
-        <PreferencesForm
-          initialValues={profile}
-          onSubmit={handleSavePreferences}
-          submitLabel="Save preferences"
-        />
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="font-medium text-slate-700">Meal stops are automatic</p>
+          <p className="mt-1">
+            Breakfast happens before you start driving each day. A lunch stop
+            is added for any driving leg over 4 hours, and a dinner stop is
+            added on top of that for legs over 8 hours — no need to set meal
+            times.
+          </p>
+        </div>
 
         <VehiclesSection
           userId={user.uid}

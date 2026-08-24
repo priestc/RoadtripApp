@@ -10,6 +10,10 @@ export const HOTEL_CHECKOUT_TIME = "11:00";
 export const HOTEL_CHECKIN_TIME = "15:00";
 /** Shortest sensible driving leg: checkout time to check-in time. */
 export const MIN_LEG_HOURS = 4;
+/** A driving day longer than this gets an automatic lunch stop. */
+export const LUNCH_THRESHOLD_HOURS = 4;
+/** A driving day longer than this also gets an automatic dinner stop. */
+export const DINNER_THRESHOLD_HOURS = 8;
 
 function timeStringToSeconds(time: string): number {
   const [hours, minutes] = time.split(":").map(Number);
@@ -163,6 +167,20 @@ export function formatDuration(seconds: number): string {
 export function formatMiles(meters: number): string {
   const miles = meters / 1609.344;
   return `${Math.round(miles)} mi`;
+}
+
+export type MealStop = "Lunch" | "Dinner";
+
+/**
+ * Which meal stops a driving day gets, based purely on how long the day's
+ * drive is. Breakfast isn't included here — it always happens before the
+ * day's drive starts, so it's never an in-route stop.
+ */
+export function getMealStops(durationSeconds: number): MealStop[] {
+  const stops: MealStop[] = [];
+  if (durationSeconds > LUNCH_THRESHOLD_HOURS * 3600) stops.push("Lunch");
+  if (durationSeconds > DINNER_THRESHOLD_HOURS * 3600) stops.push("Dinner");
+  return stops;
 }
 
 /**

@@ -16,6 +16,7 @@ import {
   formatMiles,
   getDefaultNumDays,
   getMaxDayOptions,
+  getMealStops,
   getRouteDurationSeconds,
   splitRouteIntoDays,
 } from "@/lib/routeDays";
@@ -195,6 +196,7 @@ function RouteMapInner({
         <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
           {days.map((day, i) => {
             const { start, end } = estimateDayWindow(day.durationSeconds);
+            const mealStops = getMealStops(day.durationSeconds);
             return (
               <div
                 key={i}
@@ -206,6 +208,14 @@ function RouteMapInner({
                     style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
                   />
                   <span className="font-medium text-slate-700">Day {i + 1}</span>
+                  {mealStops.map((meal) => (
+                    <span
+                      key={meal}
+                      className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500"
+                    >
+                      {meal}
+                    </span>
+                  ))}
                 </div>
                 <div className="flex gap-4 text-slate-500">
                   <span>{formatMiles(day.distanceMeters)}</span>

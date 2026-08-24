@@ -59,19 +59,9 @@ export default function DashboardPage() {
       <div className="w-full max-w-lg space-y-8">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            You&apos;re all set, {user.displayName?.split(" ")[0] ?? "there"}.
+            Welcome back, {user.displayName?.split(" ")[0] ?? "there"}.
           </h1>
-          <p className="mt-1 text-slate-500">
-            Trip planning isn&apos;t built yet — for now, here&apos;s what
-            you told us.
-          </p>
         </div>
-
-        <dl className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-          <Row label="Breakfast" value={profile.breakfastTime ?? "Skipped"} />
-          <Row label="Lunch" value={profile.lunchTime} />
-          <Row label="Dinner" value={profile.dinnerTime} />
-        </dl>
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -125,15 +115,6 @@ export default function DashboardPage() {
         </button>
       </div>
     </main>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3">
-      <dt className="text-sm text-slate-500">{label}</dt>
-      <dd className="text-sm font-medium text-slate-900">{value}</dd>
-    </div>
   );
 }
 

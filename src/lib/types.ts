@@ -1,7 +1,4 @@
 export interface DrivingPreferences {
-  breakfastTime: string | null;
-  lunchTime: string;
-  dinnerTime: string;
   onboardingComplete: true;
   homeAddress?: string;
 }
