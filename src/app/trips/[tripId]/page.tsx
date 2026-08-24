@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
-import { isLunchSelection, type LunchSelection } from "@/lib/routeDays";
+import { isLunchSelection } from "@/lib/routeDays";
 import type { Trip, Vehicle } from "@/lib/types";
 import RouteMap from "./RouteMap";
 
@@ -116,17 +116,6 @@ export default function TripDetailPage() {
     });
   }
 
-  function handleLunchChoicesChange(
-    lunchChoicesByDay: Array<LunchSelection | null>
-  ) {
-    if (!params.tripId) return;
-    updateDoc(doc(getFirebaseDb(), "trips", params.tripId), {
-      lunchChoicesByDay,
-    }).catch(() => {
-      // Non-critical — the map already reflects the selection locally.
-    });
-  }
-
   // Guards against trips saved under an older version of this field's shape
   // (it's changed more than once) -- an invalid entry becomes "no lunch"
   // rather than crashing the map on a malformed marker position.
@@ -205,13 +194,13 @@ export default function TripDetailPage() {
         </div>
 
         <RouteMap
+          tripId={params.tripId}
           departureLocation={trip.departureLocation}
           destination={trip.destination}
           initialNumDays={trip.numDrivingDays}
           onNumDaysChange={handleNumDaysChange}
           fuelRangeMiles={fuelRangeMiles}
           initialLunchChoices={lunchChoicesByDay}
-          onLunchChoicesChange={handleLunchChoicesChange}
           vehicle={
             selectedVehicle
               ? {

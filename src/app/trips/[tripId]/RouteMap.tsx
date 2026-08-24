@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AdvancedMarker,
   AdvancedMarkerAnchorPoint,
@@ -22,107 +23,19 @@ import {
   getRouteDistanceMeters,
   getRouteDurationSeconds,
   hasDinnerStop,
-  LUNCH_WINDOW_END,
-  LUNCH_WINDOW_START,
   metersToMiles,
   milesToMeters,
-  secondsAtDrivingFraction,
   splitRouteIntoDays,
-  timeStringToSeconds,
-  type DayItineraryStop,
   type LunchSelection,
-  type RouteDaySegment,
 } from "@/lib/routeDays";
-
-/** Picks a point along a day's driving path at a given 0..1 fraction. */
-function pointAtFraction(
-  day: RouteDaySegment,
-  fraction: number
-): google.maps.LatLngLiteral {
-  const index = Math.min(
-    Math.max(Math.round(fraction * (day.path.length - 1)), 0),
-    day.path.length - 1
-  );
-  return day.path[index];
-}
-
-/** Nearest point on a day's driving path to an arbitrary lat/lng, as a 0..1
- * fraction — a simple squared-distance nearest-neighbor scan, consistent
- * with the index-based approximations used elsewhere in this file. */
-function nearestFractionOnPath(
-  day: RouteDaySegment,
-  point: { lat: number; lng: number }
-): number {
-  let bestIndex = 0;
-  let bestDistSq = Infinity;
-  day.path.forEach((p, index) => {
-    const dLat = p.lat - point.lat;
-    const dLng = p.lng - point.lng;
-    const distSq = dLat * dLat + dLng * dLng;
-    if (distSq < bestDistSq) {
-      bestDistSq = distSq;
-      bestIndex = index;
-    }
-  });
-  return day.path.length > 1 ? bestIndex / (day.path.length - 1) : 0;
-}
-
-/** Departure and arrival are both a hotel from the map's point of view. */
-function mapMarkerLabel(label: DayItineraryStop["label"]): string {
-  return label === "Departure" || label === "Arrival" ? "Hotel" : label;
-}
-
-/** Where to actually place a stop's marker: the selected restaurant's real
- * coordinates for a chosen Lunch stop (its drivingFraction is only an
- * approximation used for ETA/geocoding, not its true location), otherwise
- * the corresponding point along the day's route. */
-function markerPosition(
-  day: RouteDaySegment,
-  stop: DayItineraryStop,
-  selectedLunch: LunchSelection | null
-): google.maps.LatLngLiteral {
-  if (
-    stop.label === "Lunch" &&
-    selectedLunch &&
-    Number.isFinite(selectedLunch.lat) &&
-    Number.isFinite(selectedLunch.lng)
-  ) {
-    return { lat: selectedLunch.lat, lng: selectedLunch.lng };
-  }
-  return pointAtFraction(day, stop.drivingFraction);
-}
-
-interface LunchSearchResult {
-  placeId: string;
-  name: string;
-  type: string;
-  lat: number;
-  lng: number;
-}
-
-interface GasSearchResult {
-  placeId: string;
-  name: string;
-  lat: number;
-  lng: number;
-  pricePerGallon: number;
-  city: string | null;
-}
-
-interface CheapestGasStop {
-  /** The cheapest city's name (not a single station's). */
-  city: string;
-  /** That city's average price across its stations found along the route. */
-  avgPricePerGallon: number;
-  /** Centroid of that city's stations, used as the map position. */
-  lat: number;
-  lng: number;
-  drivingFraction: number;
-  secondsSinceMidnight: number;
-}
-
-const LUNCH_WINDOW_START_SECONDS = timeStringToSeconds(LUNCH_WINDOW_START);
-const LUNCH_WINDOW_END_SECONDS = timeStringToSeconds(LUNCH_WINDOW_END);
+import {
+  extractCityName,
+  mapMarkerLabel,
+  markerPosition,
+  pointAtFraction,
+  searchGasForDay,
+  type CheapestGasStop,
+} from "@/lib/routeSearch";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
@@ -132,22 +45,22 @@ export interface TripVehicle {
 }
 
 export default function RouteMap({
+  tripId,
   departureLocation,
   destination,
   initialNumDays,
   onNumDaysChange,
   fuelRangeMiles,
   initialLunchChoices,
-  onLunchChoicesChange,
   vehicle,
 }: {
+  tripId: string;
   departureLocation: string;
   destination: string;
   initialNumDays?: number;
   onNumDaysChange: (numDays: number) => void;
   fuelRangeMiles: number | null;
   initialLunchChoices?: Array<LunchSelection | null>;
-  onLunchChoicesChange: (choices: Array<LunchSelection | null>) => void;
   vehicle: TripVehicle | null;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
@@ -161,13 +74,13 @@ export default function RouteMap({
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
       <RouteMapInner
+        tripId={tripId}
         departureLocation={departureLocation}
         destination={destination}
         initialNumDays={initialNumDays}
         onNumDaysChange={onNumDaysChange}
         fuelRangeMiles={fuelRangeMiles}
         initialLunchChoices={initialLunchChoices}
-        onLunchChoicesChange={onLunchChoicesChange}
         vehicle={vehicle}
       />
     </APIProvider>
@@ -175,22 +88,22 @@ export default function RouteMap({
 }
 
 function RouteMapInner({
+  tripId,
   departureLocation,
   destination,
   initialNumDays,
   onNumDaysChange,
   fuelRangeMiles,
   initialLunchChoices,
-  onLunchChoicesChange,
   vehicle,
 }: {
+  tripId: string;
   departureLocation: string;
   destination: string;
   initialNumDays?: number;
   onNumDaysChange: (numDays: number) => void;
   fuelRangeMiles: number | null;
   initialLunchChoices?: Array<LunchSelection | null>;
-  onLunchChoicesChange: (choices: Array<LunchSelection | null>) => void;
   vehicle: TripVehicle | null;
 }) {
   const map = useMap();
@@ -280,76 +193,9 @@ function RouteMapInner({
     [days]
   );
 
-  // For each day, restaurants found via a search along that day's route,
-  // projected onto the route (for an ETA) and filtered to the lunch window,
-  // sorted chronologically. Re-runs only when the route/day-split actually
-  // changes — not when a lunch choice is toggled.
-  const [lunchOptionsByDay, setLunchOptionsByDay] = useState<
-    LunchSelection[][] | null
-  >(null);
-
-  useEffect(() => {
-    if (!days || !dayHasDinner || !geometryLibrary) return;
-    let cancelled = false;
-
-    Promise.all(
-      days.map(async (day, i): Promise<LunchSelection[]> => {
-        const encodedPolyline = geometryLibrary.encoding.encodePath(day.path);
-        let results: LunchSearchResult[];
-        try {
-          const res = await fetch("/api/places/lunch-search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ encodedPolyline }),
-          });
-          results = res.ok ? await res.json() : [];
-        } catch {
-          results = [];
-        }
-
-        return results
-          .map((r): LunchSelection => {
-            const drivingFraction = nearestFractionOnPath(day, {
-              lat: r.lat,
-              lng: r.lng,
-            });
-            return {
-              placeId: r.placeId,
-              name: r.name,
-              type: r.type,
-              lat: r.lat,
-              lng: r.lng,
-              drivingFraction,
-              secondsSinceMidnight: secondsAtDrivingFraction(
-                day.durationSeconds,
-                dayHasDinner[i],
-                drivingFraction
-              ),
-            };
-          })
-          .filter(
-            (option) =>
-              option.secondsSinceMidnight >= LUNCH_WINDOW_START_SECONDS &&
-              option.secondsSinceMidnight <= LUNCH_WINDOW_END_SECONDS
-          )
-          .sort((a, b) => a.secondsSinceMidnight - b.secondsSinceMidnight);
-      })
-    ).then((results) => {
-      if (!cancelled) setLunchOptionsByDay(results);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [days, dayHasDinner, geometryLibrary]);
-
-  // For each day, gas stations with current regular-unleaded pricing found
-  // via a search along that day's full route (not window-restricted, since
-  // fuel stops aren't tied to a time of day the way meals are), grouped by
-  // city. Used for that day's overall average price (across every station
-  // found) and to flag whichever city has the cheapest average as an
-  // automatic "Cheapest gas" stop, positioned at that city's stations'
-  // centroid.
+  // For each day, gas stations with current pricing along that day's route,
+  // grouped by city -- that day's overall average price, and whichever
+  // city has the cheapest average as an automatic "Cheapest gas" stop.
   const [cheapestGasByDay, setCheapestGasByDay] = useState<
     Array<CheapestGasStop | null> | null
   >(null);
@@ -362,66 +208,7 @@ function RouteMapInner({
     let cancelled = false;
 
     Promise.all(
-      days.map(async (day, i) => {
-        const encodedPolyline = geometryLibrary.encoding.encodePath(day.path);
-        let results: GasSearchResult[];
-        try {
-          const res = await fetch("/api/places/gas-search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ encodedPolyline }),
-          });
-          results = res.ok ? await res.json() : [];
-        } catch {
-          results = [];
-        }
-
-        if (results.length === 0) {
-          return { cheapest: null as CheapestGasStop | null, average: null as number | null };
-        }
-
-        const average =
-          results.reduce((sum, r) => sum + r.pricePerGallon, 0) / results.length;
-
-        // Group by city (skipping stations whose city couldn't be
-        // determined -- they can't be grouped) and average each city's
-        // prices, then find the cheapest city overall. (A plain object,
-        // not the built-in Map class -- that name is already taken here by
-        // the react-google-maps <Map> component import.)
-        const byCity: Record<string, GasSearchResult[]> = {};
-        for (const r of results) {
-          if (!r.city) continue;
-          (byCity[r.city] ??= []).push(r);
-        }
-
-        let cheapest: CheapestGasStop | null = null;
-        for (const [city, stations] of Object.entries(byCity)) {
-          const cityAverage =
-            stations.reduce((sum, s) => sum + s.pricePerGallon, 0) /
-            stations.length;
-          if (!cheapest || cityAverage < cheapest.avgPricePerGallon) {
-            const lat =
-              stations.reduce((sum, s) => sum + s.lat, 0) / stations.length;
-            const lng =
-              stations.reduce((sum, s) => sum + s.lng, 0) / stations.length;
-            const drivingFraction = nearestFractionOnPath(day, { lat, lng });
-            cheapest = {
-              city,
-              avgPricePerGallon: cityAverage,
-              lat,
-              lng,
-              drivingFraction,
-              secondsSinceMidnight: secondsAtDrivingFraction(
-                day.durationSeconds,
-                dayHasDinner[i],
-                drivingFraction
-              ),
-            };
-          }
-        }
-
-        return { cheapest, average };
-      })
+      days.map((day, i) => searchGasForDay(geometryLibrary, day, dayHasDinner[i]))
     ).then((results) => {
       if (cancelled) return;
       setCheapestGasByDay(results.map((r) => r.cheapest));
@@ -433,34 +220,12 @@ function RouteMapInner({
     };
   }, [days, dayHasDinner, geometryLibrary]);
 
-  // Per-day lunch choice: explicit per-day overrides layered on top of
-  // whatever was saved on the trip. Using a plain object (day index -> value)
-  // rather than a full array lets a single day's toggle update independently.
-  const [lunchChoiceOverrides, setLunchChoiceOverrides] = useState<
-    Record<number, LunchSelection | null>
-  >({});
-
+  // Lunch is chosen on each day's own page now -- this trip page only
+  // displays whatever was already saved there, never a picker.
   const lunchChoices = useMemo(() => {
     if (!days) return null;
-    return days.map((_, i) =>
-      i in lunchChoiceOverrides
-        ? lunchChoiceOverrides[i]
-        : (initialLunchChoices?.[i] ?? null)
-    );
-  }, [days, lunchChoiceOverrides, initialLunchChoices]);
-
-  function handleLunchChoiceChange(
-    dayIndex: number,
-    selection: LunchSelection | null
-  ) {
-    const updated = { ...lunchChoiceOverrides, [dayIndex]: selection };
-    setLunchChoiceOverrides(updated);
-    if (!days) return;
-    const fullChoices = days.map((_, i) =>
-      i in updated ? updated[i] : (initialLunchChoices?.[i] ?? null)
-    );
-    onLunchChoicesChange(fullChoices);
-  }
+    return days.map((_, i) => initialLunchChoices?.[i] ?? null);
+  }, [days, initialLunchChoices]);
 
   // The full stop-by-stop itinerary (Departure/Lunch/Dinner/Arrival, each
   // with a clock time and a driving-path fraction) for every day. Shared by
@@ -645,7 +410,6 @@ function RouteMapInner({
           {days.map((day, i) => {
             const itinerary = dayItineraries[i];
             const selectedLunch = lunchChoices[i];
-            const lunchOptions = lunchOptionsByDay?.[i];
 
             // Only trust the geocoded city arrays once they match the
             // current day count — they can briefly lag behind `days` after
@@ -656,7 +420,11 @@ function RouteMapInner({
             const dinnerCitiesReady = dinnerCitiesByDay?.length === days.length;
 
             return (
-              <div key={i} className="px-4 py-3 text-sm">
+              <Link
+                key={i}
+                href={`/trips/${tripId}/days/${i}`}
+                className="block px-4 py-3 text-sm transition hover:bg-slate-50"
+              >
                 <div className="mb-1.5 flex items-center gap-2">
                   <span
                     className="inline-block h-3 w-3 shrink-0 rounded-full"
@@ -693,36 +461,6 @@ function RouteMapInner({
                   ) : null}
                 </div>
 
-                <div className="mb-2 space-y-1 pl-5 text-xs text-slate-600">
-                  {lunchOptions === undefined && (
-                    <p className="text-slate-400">Finding lunch spots…</p>
-                  )}
-                  {lunchOptions?.length === 0 && (
-                    <p className="text-slate-400">
-                      No lunch spots found along this leg.
-                    </p>
-                  )}
-                  {lunchOptions?.map((option) => {
-                    const checked = selectedLunch?.placeId === option.placeId;
-                    return (
-                      <label
-                        key={option.placeId}
-                        className="flex items-center gap-1.5"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
-                            handleLunchChoiceChange(i, checked ? null : option)
-                          }
-                        />
-                        {option.name} ({option.type}) —{" "}
-                        {formatSecondsAsClockTime(option.secondsSinceMidnight)}
-                      </label>
-                    );
-                  })}
-                </div>
-
                 <div className="space-y-0.5 pl-5">
                   {(() => {
                     const rows = itinerary.map((stop) => {
@@ -745,6 +483,14 @@ function RouteMapInner({
                       };
                     });
 
+                    if (!selectedLunch) {
+                      rows.push({
+                        label: "Lunch",
+                        detail: "Not chosen yet — click to pick a spot",
+                        secondsSinceMidnight: -1,
+                      });
+                    }
+
                     const gas = cheapestGasByDay?.[i];
                     if (gas) {
                       rows.push({
@@ -765,12 +511,14 @@ function RouteMapInner({
                           {row.label}
                           {row.detail ? ` — ${row.detail}` : ""}
                         </span>
-                        <span>{formatSecondsAsClockTime(row.secondsSinceMidnight)}</span>
+                        {row.secondsSinceMidnight >= 0 && (
+                          <span>{formatSecondsAsClockTime(row.secondsSinceMidnight)}</span>
+                        )}
                       </div>
                     ));
                   })()}
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>
@@ -798,34 +546,4 @@ function RouteMapInner({
       )}
     </div>
   );
-}
-
-/** Pulls a "City, State" label out of a geocoding result, falling back to
- * progressively broader area types for the city part if there's no exact
- * locality (e.g. a point out in the countryside). */
-function extractCityName(
-  result: google.maps.GeocoderResult | undefined
-): string | null {
-  if (!result) return null;
-  const candidateTypes = [
-    "locality",
-    "administrative_area_level_3",
-    "administrative_area_level_2",
-  ];
-  let city: string | null = null;
-  for (const type of candidateTypes) {
-    const component = result.address_components.find((c) =>
-      c.types.includes(type)
-    );
-    if (component) {
-      city = component.long_name;
-      break;
-    }
-  }
-  if (!city) return null;
-
-  const stateComponent = result.address_components.find((c) =>
-    c.types.includes("administrative_area_level_1")
-  );
-  return stateComponent ? `${city}, ${stateComponent.short_name}` : city;
 }
