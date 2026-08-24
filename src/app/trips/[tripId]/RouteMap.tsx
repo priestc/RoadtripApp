@@ -15,6 +15,7 @@ import {
   formatDuration,
   formatMiles,
   splitRouteIntoDays,
+  type DailyWindowPreferences,
   type RouteDaySegment,
 } from "@/lib/routeDays";
 
@@ -23,15 +24,11 @@ const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 export default function RouteMap({
   departureLocation,
   destination,
-  maxDrivingHoursPerDay,
-  earliestDepartureTime,
-  earliestStoppingTime,
+  windowPreferences,
 }: {
   departureLocation: string;
   destination: string;
-  maxDrivingHoursPerDay: number;
-  earliestDepartureTime: string;
-  earliestStoppingTime: string;
+  windowPreferences: DailyWindowPreferences;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
     return (
@@ -46,9 +43,7 @@ export default function RouteMap({
       <RouteMapInner
         departureLocation={departureLocation}
         destination={destination}
-        maxDrivingHoursPerDay={maxDrivingHoursPerDay}
-        earliestDepartureTime={earliestDepartureTime}
-        earliestStoppingTime={earliestStoppingTime}
+        windowPreferences={windowPreferences}
       />
     </APIProvider>
   );
@@ -57,15 +52,11 @@ export default function RouteMap({
 function RouteMapInner({
   departureLocation,
   destination,
-  maxDrivingHoursPerDay,
-  earliestDepartureTime,
-  earliestStoppingTime,
+  windowPreferences,
 }: {
   departureLocation: string;
   destination: string;
-  maxDrivingHoursPerDay: number;
-  earliestDepartureTime: string;
-  earliestStoppingTime: string;
+  windowPreferences: DailyWindowPreferences;
 }) {
   const map = useMap();
   const routesLibrary = useMapsLibrary("routes");
@@ -94,13 +85,7 @@ function RouteMapInner({
           setError("Couldn't find a route between these locations.");
           return;
         }
-        setDays(
-          splitRouteIntoDays(leg, {
-            maxDrivingHoursPerDay,
-            earliestDepartureTime,
-            earliestStoppingTime,
-          })
-        );
+        setDays(splitRouteIntoDays(leg, windowPreferences));
         setEndpoints({
           start: { lat: leg.start_location.lat(), lng: leg.start_location.lng() },
           end: { lat: leg.end_location.lat(), lng: leg.end_location.lng() },
@@ -115,15 +100,7 @@ function RouteMapInner({
       .catch(() => {
         setError("Couldn't calculate a route between these locations.");
       });
-  }, [
-    routesLibrary,
-    map,
-    departureLocation,
-    destination,
-    maxDrivingHoursPerDay,
-    earliestDepartureTime,
-    earliestStoppingTime,
-  ]);
+  }, [routesLibrary, map, departureLocation, destination, windowPreferences]);
 
   return (
     <div className="space-y-3">
@@ -159,8 +136,8 @@ function RouteMapInner({
         <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
           {days.map((day, i) => {
             const { start, end } = estimateDayWindow(
-              earliestDepartureTime,
-              day.durationSeconds
+              day.durationSeconds,
+              windowPreferences
             );
             return (
               <div

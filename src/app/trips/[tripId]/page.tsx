@@ -68,9 +68,13 @@ export default function TripDetailPage() {
         <RouteMap
           departureLocation={trip.departureLocation}
           destination={trip.destination}
-          maxDrivingHoursPerDay={profile?.maxDrivingHoursPerDay ?? 8}
-          earliestDepartureTime={profile?.earliestDepartureTime ?? "08:00"}
-          earliestStoppingTime={profile?.earliestStoppingTime ?? "15:00"}
+          windowPreferences={{
+            maxDrivingHoursPerDay: profile?.maxDrivingHoursPerDay ?? 8,
+            earliestDepartureTime: profile?.earliestDepartureTime ?? "07:00",
+            latestDepartureTime: profile?.latestDepartureTime ?? "11:00",
+            earliestStoppingTime: profile?.earliestStoppingTime ?? "15:00",
+            latestStoppingTime: profile?.latestStoppingTime ?? "20:00",
+          }}
         />
       </div>
     </main>

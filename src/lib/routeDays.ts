@@ -4,20 +4,34 @@ export interface RouteDaySegment {
   distanceMeters: number;
 }
 
+export interface DailyWindowPreferences {
+  maxDrivingHoursPerDay: number;
+  earliestDepartureTime: string;
+  latestDepartureTime: string;
+  earliestStoppingTime: string;
+  latestStoppingTime: string;
+}
+
 function timeStringToSeconds(time: string): number {
   const [hours, minutes] = time.split(":").map(Number);
   return (hours || 0) * 3600 + (minutes || 0) * 60;
 }
 
+function formatSecondsAsClockTime(secondsSinceMidnight: number): string {
+  const date = new Date(2000, 0, 1, 0, 0, 0);
+  date.setSeconds(secondsSinceMidnight);
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 /**
- * Splits a computed driving route into per-day segments. Every day except
- * the last is driven up to a daily target — whichever comes first between
- * the max-comfortable-driving-hours preference and the window from the
- * earliest-departure time to the earliest-comfortable-stopping time (the
- * point hotels typically allow check-in). Stopping earlier than that floor
- * just wastes comfortable driving time for no benefit, since you can't
- * check in yet anyway. Only the final day — arriving at the actual
- * destination, not an overnight stop — is allowed to come up short.
+ * Splits a computed driving route into per-day segments, evenly, across
+ * however many days the trip needs. Every day is an overnight hotel stay —
+ * including the last, since arriving at the final destination on a road
+ * trip still means checking into somewhere — so every day is capped by the
+ * same ceiling: whichever comes first between the max-comfortable-driving-
+ * hours preference, and the largest single-day span achievable between the
+ * earliest-comfortable-departure time and the latest-comfortable-stopping
+ * time.
  *
  * Long highway routes often have only a handful of Directions API "steps"
  * (e.g. a single "Continue on I-10 E for 300 mi" step can span several
@@ -30,18 +44,16 @@ function timeStringToSeconds(time: string): number {
  */
 export function splitRouteIntoDays(
   leg: google.maps.DirectionsLeg,
-  preferences: {
-    maxDrivingHoursPerDay: number;
-    earliestDepartureTime: string;
-    earliestStoppingTime: string;
-  }
+  preferences: DailyWindowPreferences
 ): RouteDaySegment[] {
   const maxDaySeconds = (preferences.maxDrivingHoursPerDay || 8) * 3600;
-  const windowSeconds =
-    timeStringToSeconds(preferences.earliestStoppingTime) -
+  const widestWindowSeconds =
+    timeStringToSeconds(preferences.latestStoppingTime) -
     timeStringToSeconds(preferences.earliestDepartureTime);
-  const dailyTargetSeconds =
-    windowSeconds > 0 ? Math.min(maxDaySeconds, windowSeconds) : maxDaySeconds;
+  const maxFeasibleDaySeconds =
+    widestWindowSeconds > 0
+      ? Math.min(maxDaySeconds, widestWindowSeconds)
+      : maxDaySeconds;
 
   const totalDurationSeconds = leg.steps.reduce(
     (sum, step) => sum + (step.duration?.value ?? 0),
@@ -49,14 +61,15 @@ export function splitRouteIntoDays(
   );
   const numDays = Math.max(
     1,
-    Math.ceil(totalDurationSeconds / dailyTargetSeconds)
+    Math.ceil(totalDurationSeconds / maxFeasibleDaySeconds)
   );
+  const targetDaySeconds = totalDurationSeconds / numDays;
 
   const days: RouteDaySegment[] = [];
   let currentPath: google.maps.LatLngLiteral[] = [];
   let currentDaySeconds = 0;
   let currentDayMeters = 0;
-  let dayBoundarySeconds = dailyTargetSeconds;
+  let dayBoundarySeconds = targetDaySeconds;
   let elapsedSeconds = 0;
 
   function finishDay() {
@@ -69,7 +82,7 @@ export function splitRouteIntoDays(
     currentPath = lastPoint ? [lastPoint] : [];
     currentDaySeconds = 0;
     currentDayMeters = 0;
-    dayBoundarySeconds += dailyTargetSeconds;
+    dayBoundarySeconds += targetDaySeconds;
   }
 
   for (const step of leg.steps) {
@@ -146,19 +159,38 @@ export function formatMiles(meters: number): string {
 }
 
 /**
- * Estimates a clock-time window for a driving day, assuming each day starts
- * at the user's preferred earliest-departure time. This is a generic
- * per-day estimate, not tied to a real calendar date — full schedule
- * tracking against actual trip dates is future work.
+ * Estimates a departure/arrival clock-time window for a driving day. Rather
+ * than always leaving at the earliest-comfortable-departure time, this
+ * solves for the latest departure that still arrives by the earliest-
+ * comfortable-stopping time — i.e. leave only as early as this day's drive
+ * actually requires, not out of habit — clamped to stay within the
+ * configured departure and stopping windows. This is a generic per-day
+ * estimate, not tied to a real calendar date — full schedule tracking
+ * against actual trip dates is future work.
  */
 export function estimateDayWindow(
-  earliestDepartureTime: string,
-  durationSeconds: number
+  durationSeconds: number,
+  preferences: DailyWindowPreferences
 ): { start: string; end: string } {
-  const [hours, minutes] = earliestDepartureTime.split(":").map(Number);
-  const start = new Date(2000, 0, 1, hours || 0, minutes || 0);
-  const end = new Date(start.getTime() + durationSeconds * 1000);
-  const format = (d: Date) =>
-    d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  return { start: format(start), end: format(end) };
+  const earliestDepartureSeconds = timeStringToSeconds(
+    preferences.earliestDepartureTime
+  );
+  const latestDepartureSeconds = timeStringToSeconds(
+    preferences.latestDepartureTime
+  );
+  const earliestStoppingSeconds = timeStringToSeconds(
+    preferences.earliestStoppingTime
+  );
+
+  const idealDepartureSeconds = earliestStoppingSeconds - durationSeconds;
+  const departureSeconds = Math.min(
+    Math.max(idealDepartureSeconds, earliestDepartureSeconds),
+    latestDepartureSeconds
+  );
+  const arrivalSeconds = departureSeconds + durationSeconds;
+
+  return {
+    start: formatSecondsAsClockTime(departureSeconds),
+    end: formatSecondsAsClockTime(arrivalSeconds),
+  };
 }
