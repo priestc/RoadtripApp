@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ApiCache } from "@/lib/apiCache";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
@@ -16,6 +17,13 @@ export interface LunchSearchResult {
   lat: number;
   lng: number;
 }
+
+// Keyed by encodedPolyline, which is exactly what determines the result --
+// the same day's route (unchanged departure/destination/day-split) hits
+// this every time the trip page reloads, which would otherwise re-bill an
+// identical Text Search call each time. A day's restaurants aren't going
+// to meaningfully change within a day, so a generous TTL is fine.
+const lunchSearchCache = new ApiCache<LunchSearchResult[]>(24 * 60 * 60 * 1000);
 
 /**
  * Searches for restaurants along a driving route (Places API (New) Text
@@ -37,6 +45,11 @@ export async function POST(request: NextRequest) {
       { error: "Missing encodedPolyline." },
       { status: 400 }
     );
+  }
+
+  const cached = lunchSearchCache.get(encodedPolyline);
+  if (cached) {
+    return NextResponse.json(cached);
   }
 
   try {
@@ -78,6 +91,7 @@ export async function POST(request: NextRequest) {
         lng: place.location!.longitude!,
       }));
 
+    lunchSearchCache.set(encodedPolyline, results);
     return NextResponse.json(results);
   } catch {
     return NextResponse.json(

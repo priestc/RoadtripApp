@@ -433,13 +433,13 @@ function RouteMapInner({
                   position={pointAtFraction(day, stop.drivingFraction)}
                 >
                   <div className="flex flex-col items-center gap-0.5">
+                    <span className="whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                      {mapMarkerLabel(stop.label)}
+                    </span>
                     <div
                       className="h-5 w-5 rounded-full border-2 border-white shadow"
                       style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
                     />
-                    <span className="whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                      {mapMarkerLabel(stop.label)}
-                    </span>
                   </div>
                 </AdvancedMarker>
               ))
@@ -447,12 +447,12 @@ function RouteMapInner({
           {fillUpPoint && (
             <AdvancedMarker position={fillUpPoint}>
               <div className="flex flex-col items-center gap-0.5">
-                <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-amber-500 text-[11px] shadow">
-                  <span aria-hidden>⛽</span>
-                </div>
                 <span className="whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
                   Fill up
                 </span>
+                <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-amber-500 text-[11px] shadow">
+                  <span aria-hidden>⛽</span>
+                </div>
               </div>
             </AdvancedMarker>
           )}
