@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  AdvancedMarker,
   APIProvider,
   Map,
-  Marker,
+  Pin,
   Polyline,
   useMap,
   useMapsLibrary,
@@ -20,7 +21,20 @@ import {
   getMealStops,
   getRouteDurationSeconds,
   splitRouteIntoDays,
+  type RouteDaySegment,
 } from "@/lib/routeDays";
+
+/** Picks a point along a day's driving path at a given 0..1 fraction. */
+function pointAtFraction(
+  day: RouteDaySegment,
+  fraction: number
+): google.maps.LatLngLiteral {
+  const index = Math.min(
+    Math.max(Math.round(fraction * (day.path.length - 1)), 0),
+    day.path.length - 1
+  );
+  return day.path[index];
+}
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
@@ -72,10 +86,6 @@ function RouteMapInner({
 
   const [leg, setLeg] = useState<google.maps.DirectionsLeg | null>(null);
   const [numDaysOverride, setNumDaysOverride] = useState<number | null>(null);
-  const [endpoints, setEndpoints] = useState<{
-    start: google.maps.LatLngLiteral;
-    end: google.maps.LatLngLiteral;
-  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch the route once per departure/destination pair.
@@ -97,16 +107,6 @@ function RouteMapInner({
           return;
         }
         setLeg(resultLeg);
-        setEndpoints({
-          start: {
-            lat: resultLeg.start_location.lat(),
-            lng: resultLeg.start_location.lng(),
-          },
-          end: {
-            lat: resultLeg.end_location.lat(),
-            lng: resultLeg.end_location.lng(),
-          },
-        });
 
         const bounds = new google.maps.LatLngBounds();
         resultLeg.steps.forEach((step) =>
@@ -152,6 +152,15 @@ function RouteMapInner({
     [days]
   );
 
+  // The full stop-by-stop itinerary (Departure/Lunch/Dinner/Arrival, each
+  // with a clock time and a driving-path fraction) for every day. Shared by
+  // the geocoding effect, the map markers, and the day list below so they
+  // all agree on exactly the same points.
+  const dayItineraries = useMemo(() => {
+    if (!days || !dayMealStops) return null;
+    return days.map((day, i) => buildDayItinerary(day.durationSeconds, dayMealStops[i]));
+  }, [days, dayMealStops]);
+
   // Boundary points between days: [overall start, end of day 1 (= start of
   // day 2), ..., overall end]. Geocoding just these (numDays + 1 points)
   // instead of two per day avoids re-geocoding the same shared point twice.
@@ -165,7 +174,7 @@ function RouteMapInner({
   >(null);
 
   useEffect(() => {
-    if (!days || !dayMealStops || !geocodingLibrary) return;
+    if (!days || !dayItineraries || !geocodingLibrary) return;
     let cancelled = false;
     const geocoder = new geocodingLibrary.Geocoder();
 
@@ -184,18 +193,11 @@ function RouteMapInner({
       ...days.map((day) => day.path[day.path.length - 1]),
     ];
 
-    const mealPointsByDay = days.map((day, i) => {
-      const itinerary = buildDayItinerary(day.durationSeconds, dayMealStops[i]);
-      return itinerary
+    const mealPointsByDay = days.map((day, i) =>
+      dayItineraries[i]
         .filter((stop) => stop.label === "Lunch" || stop.label === "Dinner")
-        .map((stop) => {
-          const pathIndex = Math.min(
-            Math.max(Math.round(stop.drivingFraction * (day.path.length - 1)), 0),
-            day.path.length - 1
-          );
-          return day.path[pathIndex];
-        });
-    });
+        .map((stop) => pointAtFraction(day, stop.drivingFraction))
+    );
 
     Promise.all([
       geocodeAll(boundaryPoints),
@@ -209,7 +211,7 @@ function RouteMapInner({
     return () => {
       cancelled = true;
     };
-  }, [days, dayMealStops, geocodingLibrary]);
+  }, [days, dayItineraries, geocodingLibrary]);
 
   return (
     <div className="space-y-3">
@@ -250,22 +252,36 @@ function RouteMapInner({
               strokeWeight={5}
             />
           ))}
-          {endpoints && (
-            <>
-              <Marker position={endpoints.start} label="A" />
-              <Marker position={endpoints.end} label="B" />
-            </>
-          )}
+          {days &&
+            dayItineraries &&
+            days.map((day, i) =>
+              dayItineraries[i].map((stop, stopIndex) => (
+                <AdvancedMarker
+                  key={`${i}-${stopIndex}`}
+                  position={pointAtFraction(day, stop.drivingFraction)}
+                >
+                  <div className="flex flex-col items-center gap-0.5">
+                    <Pin
+                      background={DAY_COLORS[i % DAY_COLORS.length]}
+                      borderColor={DAY_COLORS[i % DAY_COLORS.length]}
+                      glyphColor="#ffffff"
+                    />
+                    <span className="whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                      {stop.label}
+                    </span>
+                  </div>
+                </AdvancedMarker>
+              ))
+            )}
         </Map>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {days && days.length > 0 && dayMealStops && (
+      {days && days.length > 0 && dayItineraries && (
         <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
           {days.map((day, i) => {
-            const mealStops = dayMealStops[i];
-            const itinerary = buildDayItinerary(day.durationSeconds, mealStops);
+            const itinerary = dayItineraries[i];
 
             // Only trust the geocoded city arrays once they match the
             // current day count — they can briefly lag behind `days` after
