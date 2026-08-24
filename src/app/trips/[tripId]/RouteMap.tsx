@@ -34,8 +34,6 @@ import {
   mapMarkerLabel,
   markerPosition,
   pointAtFraction,
-  searchGasForDay,
-  type CheapestGasStop,
 } from "@/lib/routeSearch";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -55,8 +53,6 @@ function stopIcon(label: string): string {
     case "Dinner":
       return "🍽️";
     case "Fuel stop":
-      return "⛽";
-    case "Cheapest gas":
       return "⛽";
     default:
       return "📍";
@@ -133,7 +129,6 @@ function RouteMapInner({
   const map = useMap();
   const routesLibrary = useMapsLibrary("routes");
   const geocodingLibrary = useMapsLibrary("geocoding");
-  const geometryLibrary = useMapsLibrary("geometry");
 
   const [leg, setLeg] = useState<google.maps.DirectionsLeg | null>(null);
   const [numDaysOverride, setNumDaysOverride] = useState<number | null>(null);
@@ -216,33 +211,6 @@ function RouteMapInner({
     () => days?.map((day) => hasDinnerStop(day.durationSeconds)) ?? null,
     [days]
   );
-
-  // For each day, gas stations with current pricing along that day's route,
-  // grouped by city -- that day's overall average price, and whichever
-  // city has the cheapest average as an automatic "Cheapest gas" stop.
-  const [cheapestGasByDay, setCheapestGasByDay] = useState<
-    Array<CheapestGasStop | null> | null
-  >(null);
-  const [avgGasPriceByDay, setAvgGasPriceByDay] = useState<
-    Array<number | null> | null
-  >(null);
-
-  useEffect(() => {
-    if (!days || !dayHasDinner || !geometryLibrary) return;
-    let cancelled = false;
-
-    Promise.all(
-      days.map((day, i) => searchGasForDay(geometryLibrary, day, dayHasDinner[i]))
-    ).then((results) => {
-      if (cancelled) return;
-      setCheapestGasByDay(results.map((r) => r.cheapest));
-      setAvgGasPriceByDay(results.map((r) => r.average));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [days, dayHasDinner, geometryLibrary]);
 
   // Lunch and fuel stops are both chosen on each day's own page now -- this
   // trip page only displays whatever was already saved there, never a
@@ -407,26 +375,6 @@ function RouteMapInner({
                 );
               })
             )}
-          {cheapestGasByDay &&
-            cheapestGasByDay.map((gas, i) =>
-              gas ? (
-                <AdvancedMarker
-                  key={`gas-${i}`}
-                  position={{ lat: gas.lat, lng: gas.lng }}
-                  anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-                >
-                  <div className="relative h-5 w-5">
-                    <div
-                      className="h-5 w-5 rounded-full border-2 border-white shadow"
-                      style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
-                    />
-                    <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                      Cheapest gas
-                    </span>
-                  </div>
-                </AdvancedMarker>
-              ) : null
-            )}
           {fillUpPoint && (
             <AdvancedMarker
               position={fillUpPoint}
@@ -492,17 +440,6 @@ function RouteMapInner({
                   </span>
                 </div>
 
-                <div className="mb-2 pl-5 text-xs text-slate-600">
-                  {avgGasPriceByDay?.[i] != null ? (
-                    <p>
-                      Avg gas along this leg: $
-                      {avgGasPriceByDay[i]!.toFixed(2)}/gal
-                    </p>
-                  ) : avgGasPriceByDay === null ? (
-                    <p className="text-slate-400">Checking gas prices…</p>
-                  ) : null}
-                </div>
-
                 <div className="pl-5">
                   {(() => {
                     const rows = itinerary.map((stop) => {
@@ -537,16 +474,6 @@ function RouteMapInner({
                         detail: "Not chosen yet — click to pick a spot",
                         secondsSinceMidnight: -1,
                         drivingFraction: null,
-                      });
-                    }
-
-                    const gas = cheapestGasByDay?.[i];
-                    if (gas) {
-                      rows.push({
-                        label: "Cheapest gas",
-                        detail: `${gas.city} ($${gas.avgPricePerGallon.toFixed(2)}/gal avg)`,
-                        secondsSinceMidnight: gas.secondsSinceMidnight,
-                        drivingFraction: gas.drivingFraction,
                       });
                     }
 
