@@ -30,9 +30,10 @@ export interface Trip {
   // along that day's route, or null for no lunch that day. Indexed by day;
   // unset/shorter-than-days-length entries default to null (no lunch).
   lunchChoicesByDay?: Array<LunchSelection | null>;
-  // Per-day fuel stop -- a city picked by clicking its marker on that day's
-  // Gas map, or null for none. Indexed the same way as lunchChoicesByDay.
-  fuelStopsByDay?: Array<FuelStopSelection | null>;
+  // Per-day fuel stops -- zero or more cities picked by clicking their
+  // markers on that day's Gas map. Indexed the same way as
+  // lunchChoicesByDay; a missing/short entry defaults to no fuel stops.
+  fuelStopsByDay?: Array<FuelStopSelection[]>;
   // Firestore server timestamp; typed loosely since the client only ever reads it
   createdAt: unknown;
 }

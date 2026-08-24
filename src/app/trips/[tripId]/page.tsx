@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
-import { isLunchSelection } from "@/lib/routeDays";
+import { isFuelStopSelection, isLunchSelection } from "@/lib/routeDays";
 import type { Trip, Vehicle } from "@/lib/types";
 import RouteMap from "./RouteMap";
 
@@ -123,6 +123,10 @@ export default function TripDetailPage() {
     isLunchSelection(choice) ? choice : null
   );
 
+  const fuelStopsByDay = trip.fuelStopsByDay?.map((stops) =>
+    (stops ?? []).filter(isFuelStopSelection)
+  );
+
   const vehicleId = vehicleIdOverride ?? trip.vehicleId ?? "";
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId) ?? null;
   const fuelRangeInput =
@@ -201,6 +205,7 @@ export default function TripDetailPage() {
           onNumDaysChange={handleNumDaysChange}
           fuelRangeMiles={fuelRangeMiles}
           initialLunchChoices={lunchChoicesByDay}
+          initialFuelStopsByDay={fuelStopsByDay}
           vehicle={
             selectedVehicle
               ? {

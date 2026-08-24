@@ -235,6 +235,8 @@ export type MealStop = "Lunch" | "Dinner";
 export const LUNCH_DURATION_MINUTES = 45;
 /** How long a dinner stop takes. */
 export const DINNER_DURATION_MINUTES = 75;
+/** How long a quick fuel stop takes. */
+export const FUEL_STOP_DURATION_MINUTES = 15;
 
 export function getMealStopDurationSeconds(meal: MealStop): number {
   return (meal === "Lunch" ? LUNCH_DURATION_MINUTES : DINNER_DURATION_MINUTES) * 60;
@@ -297,10 +299,13 @@ export function secondsAtDrivingFraction(
 }
 
 export interface DayItineraryStop {
-  label: "Departure" | MealStop | "Arrival";
+  label: "Departure" | MealStop | "Arrival" | "Fuel";
   secondsSinceMidnight: number;
   /** 0..1 position along the day's driving path, for picking a point to reverse-geocode. */
   drivingFraction: number;
+  /** Set only for "Fuel" stops -- the index into the fuelStops array passed
+   * to buildDayItinerary, so the caller can look up which stop this is. */
+  fuelStopIndex?: number;
 }
 
 /** A specific restaurant picked as a day's lunch stop, from the results of
@@ -370,71 +375,106 @@ export function isFuelStopSelection(value: unknown): value is FuelStopSelection 
 /**
  * Builds the full stop-by-stop itinerary for a driving day: departure, an
  * optional lunch stop (only if the user picked a specific restaurant from
- * the search-along-route results), an optional automatic dinner stop, and
- * arrival.
+ * the search-along-route results), any number of user-added fuel stops, an
+ * optional automatic dinner stop, and arrival.
  *
- * Lunch, when chosen, is pinned exactly to its position/time — no further
- * adjustment — since that's literally where the selected restaurant is.
- * Dinner, still automatic, is placed at the midpoint of whatever driving
- * remains after lunch (or the midpoint of the whole day if no lunch was
- * chosen) and then clamped into its fixed window (DINNER_WINDOW_START..END).
- * Meal-stop durations (LUNCH_DURATION_MINUTES, DINNER_DURATION_MINUTES) are
- * added at each stop, and departure/arrival straddle the fixed 11:00 AM
- * checkout / 3:00 PM check-in anchors based on total driving + stop time
- * (see splitRouteIntoDays' module doc for the straddle logic). This is a
- * generic per-day estimate, not tied to a real calendar date — full
- * schedule tracking against actual trip dates is future work.
+ * Every mid-route stop's *position* along the route is fixed independently
+ * of the others: lunch is wherever the chosen restaurant is, fuel stops are
+ * wherever the user clicked, and dinner (still automatic) sits at the
+ * midpoint of whatever driving remains after lunch's position (or the
+ * midpoint of the whole day if no lunch was chosen) — none of that depends
+ * on stop durations. *Times*, on the other hand, are computed by walking
+ * the stops in route order from departure, so any stop earlier along the
+ * route pushes every later stop's clock time back by its own duration —
+ * e.g. a fuel stop before lunch delays lunch's arrival time, and one before
+ * dinner delays dinner's. Dinner's clock is then clamped into its fixed
+ * window (DINNER_WINDOW_START..END) same as before. Meal/fuel stop
+ * durations (LUNCH_DURATION_MINUTES, DINNER_DURATION_MINUTES,
+ * FUEL_STOP_DURATION_MINUTES) also add to the day's total elapsed time, so
+ * departure/arrival still straddle the fixed 11:00 AM checkout / 3:00 PM
+ * check-in anchors based on total driving + stop time (see
+ * splitRouteIntoDays' module doc for the straddle logic). This is a generic
+ * per-day estimate, not tied to a real calendar date — full schedule
+ * tracking against actual trip dates is future work.
  */
 export function buildDayItinerary(
   drivingDurationSeconds: number,
   dayHasDinner: boolean,
-  lunch: { drivingFraction: number; secondsSinceMidnight: number } | null
+  lunch: { drivingFraction: number } | null,
+  fuelStopFractions: number[] = []
 ): DayItineraryStop[] {
   const lunchSeconds = lunch ? getMealStopDurationSeconds("Lunch") : 0;
   const dinnerSeconds = dayHasDinner ? getMealStopDurationSeconds("Dinner") : 0;
-  const totalElapsedSeconds = drivingDurationSeconds + lunchSeconds + dinnerSeconds;
+  const fuelStopSeconds = FUEL_STOP_DURATION_MINUTES * 60;
+  const totalElapsedSeconds =
+    drivingDurationSeconds +
+    lunchSeconds +
+    dinnerSeconds +
+    fuelStopFractions.length * fuelStopSeconds;
   const departureSeconds = computeDepartureSeconds(totalElapsedSeconds);
+
+  let dinnerFraction: number | null = null;
+  if (dayHasDinner) {
+    const afterLunchFraction = lunch ? lunch.drivingFraction : 0;
+    dinnerFraction = afterLunchFraction + (1 - afterLunchFraction) / 2;
+  }
+
+  interface PendingStop {
+    label: "Lunch" | "Dinner" | "Fuel";
+    drivingFraction: number;
+    durationSeconds: number;
+    fuelStopIndex?: number;
+  }
+
+  const pending: PendingStop[] = [];
+  if (lunch) {
+    pending.push({
+      label: "Lunch",
+      drivingFraction: lunch.drivingFraction,
+      durationSeconds: lunchSeconds,
+    });
+  }
+  if (dinnerFraction !== null) {
+    pending.push({
+      label: "Dinner",
+      drivingFraction: dinnerFraction,
+      durationSeconds: dinnerSeconds,
+    });
+  }
+  fuelStopFractions.forEach((drivingFraction, fuelStopIndex) => {
+    pending.push({
+      label: "Fuel",
+      drivingFraction,
+      durationSeconds: fuelStopSeconds,
+      fuelStopIndex,
+    });
+  });
+  pending.sort((a, b) => a.drivingFraction - b.drivingFraction);
 
   const stops: DayItineraryStop[] = [
     { label: "Departure", secondsSinceMidnight: departureSeconds, drivingFraction: 0 },
   ];
 
   let clock = departureSeconds;
-  let drivenFraction = 0;
+  let prevFraction = 0;
+  const dinnerWindow = getMealWindowSeconds("Dinner");
 
-  if (lunch) {
-    clock = lunch.secondsSinceMidnight;
-    drivenFraction = lunch.drivingFraction;
+  for (const stop of pending) {
+    clock += (stop.drivingFraction - prevFraction) * drivingDurationSeconds;
+    if (stop.label === "Dinner") {
+      clock = Math.min(Math.max(clock, dinnerWindow.start), dinnerWindow.end);
+    }
     stops.push({
-      label: "Lunch",
+      label: stop.label,
       secondsSinceMidnight: clock,
-      drivingFraction: drivenFraction,
+      drivingFraction: stop.drivingFraction,
+      fuelStopIndex: stop.fuelStopIndex,
     });
-    clock += lunchSeconds;
+    clock += stop.durationSeconds;
+    prevFraction = stop.drivingFraction;
   }
 
-  const remainingDrivingSeconds = (1 - drivenFraction) * drivingDurationSeconds;
-
-  if (dayHasDinner) {
-    const drivingToDinner = remainingDrivingSeconds / 2;
-    clock += drivingToDinner;
-
-    const window = getMealWindowSeconds("Dinner");
-    clock = Math.min(Math.max(clock, window.start), window.end);
-
-    drivenFraction +=
-      drivingDurationSeconds > 0 ? drivingToDinner / drivingDurationSeconds : 0;
-    stops.push({
-      label: "Dinner",
-      secondsSinceMidnight: clock,
-      drivingFraction: drivenFraction,
-    });
-    clock += dinnerSeconds;
-    clock += remainingDrivingSeconds - drivingToDinner;
-  } else {
-    clock += remainingDrivingSeconds;
-  }
-
+  clock += (1 - prevFraction) * drivingDurationSeconds;
   stops.push({ label: "Arrival", secondsSinceMidnight: clock, drivingFraction: 1 });
 
   return stops;

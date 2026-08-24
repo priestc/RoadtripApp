@@ -60,8 +60,8 @@ export default function DayMap({
   initialNumDays,
   initialLunchChoice,
   onLunchChoiceChange,
-  initialFuelStop,
-  onFuelStopChange,
+  initialFuelStops,
+  onFuelStopsChange,
   vehicle,
 }: {
   dayIndex: number;
@@ -70,8 +70,8 @@ export default function DayMap({
   initialNumDays?: number;
   initialLunchChoice: LunchSelection | null;
   onLunchChoiceChange: (choice: LunchSelection | null) => void;
-  initialFuelStop: FuelStopSelection | null;
-  onFuelStopChange: (stop: FuelStopSelection | null) => void;
+  initialFuelStops: FuelStopSelection[];
+  onFuelStopsChange: (stops: FuelStopSelection[]) => void;
   vehicle: TripVehicle | null;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
@@ -91,8 +91,8 @@ export default function DayMap({
         initialNumDays={initialNumDays}
         initialLunchChoice={initialLunchChoice}
         onLunchChoiceChange={onLunchChoiceChange}
-        initialFuelStop={initialFuelStop}
-        onFuelStopChange={onFuelStopChange}
+        initialFuelStops={initialFuelStops}
+        onFuelStopsChange={onFuelStopsChange}
         vehicle={vehicle}
       />
     </APIProvider>
@@ -106,8 +106,8 @@ function DayMapInner({
   initialNumDays,
   initialLunchChoice,
   onLunchChoiceChange,
-  initialFuelStop,
-  onFuelStopChange,
+  initialFuelStops,
+  onFuelStopsChange,
   vehicle,
 }: {
   dayIndex: number;
@@ -116,8 +116,8 @@ function DayMapInner({
   initialNumDays?: number;
   initialLunchChoice: LunchSelection | null;
   onLunchChoiceChange: (choice: LunchSelection | null) => void;
-  initialFuelStop: FuelStopSelection | null;
-  onFuelStopChange: (stop: FuelStopSelection | null) => void;
+  initialFuelStops: FuelStopSelection[];
+  onFuelStopsChange: (stops: FuelStopSelection[]) => void;
   vehicle: TripVehicle | null;
 }) {
   const map = useMap();
@@ -276,13 +276,11 @@ function DayMapInner({
   const itinerary = useMemo(() => {
     if (!day || dayHasDinner === null) return null;
     const lunch = initialLunchChoice
-      ? {
-          drivingFraction: initialLunchChoice.drivingFraction,
-          secondsSinceMidnight: initialLunchChoice.secondsSinceMidnight,
-        }
+      ? { drivingFraction: initialLunchChoice.drivingFraction }
       : null;
-    return buildDayItinerary(day.durationSeconds, dayHasDinner, lunch);
-  }, [day, dayHasDinner, initialLunchChoice]);
+    const fuelStopFractions = initialFuelStops.map((s) => s.drivingFraction);
+    return buildDayItinerary(day.durationSeconds, dayHasDinner, lunch, fuelStopFractions);
+  }, [day, dayHasDinner, initialLunchChoice, initialFuelStops]);
 
   const [boundaryCities, setBoundaryCities] = useState<{
     start: string | null;
@@ -387,38 +385,38 @@ function DayMapInner({
             strokeWeight={5}
           />
           {markerMode === "stops" &&
-            itinerary.map((stop, stopIndex) => (
-              <AdvancedMarker
-                key={stopIndex}
-                position={markerPosition(day, stop, initialLunchChoice)}
-                anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-              >
-                <div className="relative h-5 w-5">
-                  <div
-                    className="h-5 w-5 rounded-full border-2 border-white shadow"
-                    style={{ backgroundColor: color }}
-                  />
-                  <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                    {mapMarkerLabel(stop.label)}
-                  </span>
-                </div>
-              </AdvancedMarker>
-            ))}
-          {markerMode === "stops" && initialFuelStop && (
-            <AdvancedMarker
-              position={{ lat: initialFuelStop.lat, lng: initialFuelStop.lng }}
-              anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-            >
-              <div className="relative h-5 w-5">
-                <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-amber-500 text-[11px] shadow">
-                  <span aria-hidden>⛽</span>
-                </div>
-                <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                  Fuel stop
-                </span>
-              </div>
-            </AdvancedMarker>
-          )}
+            itinerary.map((stop, stopIndex) => {
+              const fuelStop =
+                stop.label === "Fuel" && stop.fuelStopIndex !== undefined
+                  ? initialFuelStops[stop.fuelStopIndex]
+                  : undefined;
+              const position = fuelStop
+                ? { lat: fuelStop.lat, lng: fuelStop.lng }
+                : markerPosition(day, stop, initialLunchChoice);
+              return (
+                <AdvancedMarker
+                  key={stopIndex}
+                  position={position}
+                  anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                >
+                  <div className="relative h-5 w-5">
+                    {fuelStop ? (
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-amber-500 text-[11px] shadow">
+                        <span aria-hidden>⛽</span>
+                      </div>
+                    ) : (
+                      <div
+                        className="h-5 w-5 rounded-full border-2 border-white shadow"
+                        style={{ backgroundColor: color }}
+                      />
+                    )}
+                    <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                      {fuelStop ? `Fuel — ${fuelStop.city}` : mapMarkerLabel(stop.label)}
+                    </span>
+                  </div>
+                </AdvancedMarker>
+              );
+            })}
           {markerMode === "gas" &&
             gasInfo &&
             gasInfo.byCity.length > 0 &&
@@ -453,7 +451,7 @@ function DayMapInner({
             (() => {
               const cityStop = gasInfo.byCity.find((c) => c.city === openGasCity);
               if (!cityStop) return null;
-              const isSelected = initialFuelStop?.city === cityStop.city;
+              const isSelected = initialFuelStops.some((s) => s.city === cityStop.city);
               return (
                 <InfoWindow
                   position={{ lat: cityStop.lat, lng: cityStop.lng }}
@@ -466,7 +464,11 @@ function DayMapInner({
                     <button
                       type="button"
                       onClick={() => {
-                        onFuelStopChange(isSelected ? null : cityStop);
+                        onFuelStopsChange(
+                          isSelected
+                            ? initialFuelStops.filter((s) => s.city !== cityStop.city)
+                            : [...initialFuelStops, cityStop]
+                        );
                         setOpenGasCity(null);
                       }}
                       className="rounded-md bg-slate-700 px-2 py-1 text-xs font-medium text-white hover:bg-slate-600"
@@ -551,27 +553,27 @@ function DayMapInner({
               .filter((stop) => stop.label !== "Lunch" || initialLunchChoice)
               .map((stop) => {
                 let detail: string | null = null;
+                let fuelStop: FuelStopSelection | null = null;
                 if (stop.label === "Departure") detail = boundaryCities?.start ?? null;
                 else if (stop.label === "Arrival") detail = boundaryCities?.end ?? null;
                 else if (stop.label === "Lunch")
                   detail = initialLunchChoice
                     ? `${initialLunchChoice.name} (${initialLunchChoice.type})${initialLunchChoice.city ? ` — ${initialLunchChoice.city}` : ""}`
                     : null;
-                else detail = dinnerCity;
+                else if (stop.label === "Dinner") detail = dinnerCity;
+                else if (stop.label === "Fuel" && stop.fuelStopIndex !== undefined) {
+                  fuelStop = initialFuelStops[stop.fuelStopIndex] ?? null;
+                  detail = fuelStop
+                    ? `${fuelStop.city} ($${fuelStop.avgPricePerGallon.toFixed(2)}/gal avg)`
+                    : null;
+                }
                 return {
-                  label: stop.label as string,
+                  label: stop.label === "Fuel" ? "Fuel stop" : (stop.label as string),
                   detail,
                   secondsSinceMidnight: stop.secondsSinceMidnight,
+                  fuelStop,
                 };
               });
-
-            if (initialFuelStop) {
-              rows.push({
-                label: "Fuel stop",
-                detail: `${initialFuelStop.city} ($${initialFuelStop.avgPricePerGallon.toFixed(2)}/gal avg)`,
-                secondsSinceMidnight: initialFuelStop.secondsSinceMidnight,
-              });
-            }
 
             rows.sort((a, b) => a.secondsSinceMidnight - b.secondsSinceMidnight);
 
@@ -581,7 +583,22 @@ function DayMapInner({
                   {row.label}
                   {row.detail ? ` — ${row.detail}` : ""}
                 </span>
-                <span>{formatSecondsAsClockTime(row.secondsSinceMidnight)}</span>
+                <span className="flex items-center gap-2">
+                  {formatSecondsAsClockTime(row.secondsSinceMidnight)}
+                  {row.fuelStop && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onFuelStopsChange(
+                          initialFuelStops.filter((s) => s.city !== row.fuelStop!.city)
+                        )
+                      }
+                      className="text-xs text-red-500 hover:text-red-700"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </span>
               </div>
             ));
           })()}

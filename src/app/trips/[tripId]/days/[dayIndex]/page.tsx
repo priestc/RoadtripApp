@@ -97,11 +97,11 @@ export default function DayDetailPage() {
     });
   }
 
-  function handleFuelStopChange(stop: FuelStopSelection | null) {
+  function handleFuelStopsChange(stops: FuelStopSelection[]) {
     if (!params.tripId || !trip) return;
     const updated = [...(trip.fuelStopsByDay ?? [])];
-    while (updated.length <= dayIndex) updated.push(null);
-    updated[dayIndex] = stop;
+    while (updated.length <= dayIndex) updated.push([]);
+    updated[dayIndex] = stops;
     updateDoc(doc(getFirebaseDb(), "trips", params.tripId), {
       fuelStopsByDay: updated,
     }).catch(() => {
@@ -112,8 +112,9 @@ export default function DayDetailPage() {
   const rawChoice = trip.lunchChoicesByDay?.[dayIndex];
   const initialLunchChoice = isLunchSelection(rawChoice) ? rawChoice : null;
 
-  const rawFuelStop = trip.fuelStopsByDay?.[dayIndex];
-  const initialFuelStop = isFuelStopSelection(rawFuelStop) ? rawFuelStop : null;
+  const initialFuelStops = (trip.fuelStopsByDay?.[dayIndex] ?? []).filter(
+    isFuelStopSelection
+  );
 
   const vehicleId = trip.vehicleId ?? "";
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId) ?? null;
@@ -144,8 +145,8 @@ export default function DayDetailPage() {
           initialNumDays={trip.numDrivingDays}
           initialLunchChoice={initialLunchChoice}
           onLunchChoiceChange={handleLunchChoiceChange}
-          initialFuelStop={initialFuelStop}
-          onFuelStopChange={handleFuelStopChange}
+          initialFuelStops={initialFuelStops}
+          onFuelStopsChange={handleFuelStopsChange}
           vehicle={
             selectedVehicle
               ? {

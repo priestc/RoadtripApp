@@ -26,6 +26,7 @@ import {
   metersToMiles,
   milesToMeters,
   splitRouteIntoDays,
+  type FuelStopSelection,
   type LunchSelection,
 } from "@/lib/routeDays";
 import {
@@ -52,6 +53,7 @@ export default function RouteMap({
   onNumDaysChange,
   fuelRangeMiles,
   initialLunchChoices,
+  initialFuelStopsByDay,
   vehicle,
 }: {
   tripId: string;
@@ -61,6 +63,7 @@ export default function RouteMap({
   onNumDaysChange: (numDays: number) => void;
   fuelRangeMiles: number | null;
   initialLunchChoices?: Array<LunchSelection | null>;
+  initialFuelStopsByDay?: Array<FuelStopSelection[]>;
   vehicle: TripVehicle | null;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
@@ -81,6 +84,7 @@ export default function RouteMap({
         onNumDaysChange={onNumDaysChange}
         fuelRangeMiles={fuelRangeMiles}
         initialLunchChoices={initialLunchChoices}
+        initialFuelStopsByDay={initialFuelStopsByDay}
         vehicle={vehicle}
       />
     </APIProvider>
@@ -95,6 +99,7 @@ function RouteMapInner({
   onNumDaysChange,
   fuelRangeMiles,
   initialLunchChoices,
+  initialFuelStopsByDay,
   vehicle,
 }: {
   tripId: string;
@@ -104,6 +109,7 @@ function RouteMapInner({
   onNumDaysChange: (numDays: number) => void;
   fuelRangeMiles: number | null;
   initialLunchChoices?: Array<LunchSelection | null>;
+  initialFuelStopsByDay?: Array<FuelStopSelection[]>;
   vehicle: TripVehicle | null;
 }) {
   const map = useMap();
@@ -220,30 +226,32 @@ function RouteMapInner({
     };
   }, [days, dayHasDinner, geometryLibrary]);
 
-  // Lunch is chosen on each day's own page now -- this trip page only
-  // displays whatever was already saved there, never a picker.
+  // Lunch and fuel stops are both chosen on each day's own page now -- this
+  // trip page only displays whatever was already saved there, never a
+  // picker.
   const lunchChoices = useMemo(() => {
     if (!days) return null;
     return days.map((_, i) => initialLunchChoices?.[i] ?? null);
   }, [days, initialLunchChoices]);
 
-  // The full stop-by-stop itinerary (Departure/Lunch/Dinner/Arrival, each
-  // with a clock time and a driving-path fraction) for every day. Shared by
-  // the geocoding effect, the map markers, and the day list below so they
-  // all agree on exactly the same points.
+  const fuelStopsByDay = useMemo(() => {
+    if (!days) return null;
+    return days.map((_, i) => initialFuelStopsByDay?.[i] ?? []);
+  }, [days, initialFuelStopsByDay]);
+
+  // The full stop-by-stop itinerary (Departure/Lunch/Fuel/Dinner/Arrival,
+  // each with a clock time and a driving-path fraction) for every day.
+  // Shared by the geocoding effect, the map markers, and the day list below
+  // so they all agree on exactly the same points.
   const dayItineraries = useMemo(() => {
-    if (!days || !dayHasDinner || !lunchChoices) return null;
+    if (!days || !dayHasDinner || !lunchChoices || !fuelStopsByDay) return null;
     return days.map((day, i) => {
       const choice = lunchChoices[i];
-      const lunch = choice
-        ? {
-            drivingFraction: choice.drivingFraction,
-            secondsSinceMidnight: choice.secondsSinceMidnight,
-          }
-        : null;
-      return buildDayItinerary(day.durationSeconds, dayHasDinner[i], lunch);
+      const lunch = choice ? { drivingFraction: choice.drivingFraction } : null;
+      const fuelStopFractions = fuelStopsByDay[i].map((s) => s.drivingFraction);
+      return buildDayItinerary(day.durationSeconds, dayHasDinner[i], lunch, fuelStopFractions);
     });
-  }, [days, dayHasDinner, lunchChoices]);
+  }, [days, dayHasDinner, lunchChoices, fuelStopsByDay]);
 
   // Boundary points between days: [overall start, end of day 1 (= start of
   // day 2), ..., overall end]. Geocoding just these (numDays + 1 points)
@@ -346,24 +354,40 @@ function RouteMapInner({
           {days &&
             dayItineraries &&
             lunchChoices &&
+            fuelStopsByDay &&
             days.map((day, i) =>
-              dayItineraries[i].map((stop, stopIndex) => (
-                <AdvancedMarker
-                  key={`${i}-${stopIndex}`}
-                  position={markerPosition(day, stop, lunchChoices[i])}
-                  anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-                >
-                  <div className="relative h-5 w-5">
-                    <div
-                      className="h-5 w-5 rounded-full border-2 border-white shadow"
-                      style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
-                    />
-                    <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
-                      {mapMarkerLabel(stop.label)}
-                    </span>
-                  </div>
-                </AdvancedMarker>
-              ))
+              dayItineraries[i].map((stop, stopIndex) => {
+                const fuelStop =
+                  stop.label === "Fuel" && stop.fuelStopIndex !== undefined
+                    ? fuelStopsByDay[i][stop.fuelStopIndex]
+                    : undefined;
+                const position = fuelStop
+                  ? { lat: fuelStop.lat, lng: fuelStop.lng }
+                  : markerPosition(day, stop, lunchChoices[i]);
+                return (
+                  <AdvancedMarker
+                    key={`${i}-${stopIndex}`}
+                    position={position}
+                    anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                  >
+                    <div className="relative h-5 w-5">
+                      {fuelStop ? (
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-amber-500 text-[11px] shadow">
+                          <span aria-hidden>⛽</span>
+                        </div>
+                      ) : (
+                        <div
+                          className="h-5 w-5 rounded-full border-2 border-white shadow"
+                          style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
+                        />
+                      )}
+                      <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 py-0.5 text-[10px] font-medium text-slate-700 shadow">
+                        {fuelStop ? `Fuel — ${fuelStop.city}` : mapMarkerLabel(stop.label)}
+                      </span>
+                    </div>
+                  </AdvancedMarker>
+                );
+              })
             )}
           {cheapestGasByDay &&
             cheapestGasByDay.map((gas, i) =>
@@ -473,11 +497,16 @@ function RouteMapInner({
                         detail = selectedLunch
                           ? `${selectedLunch.name} (${selectedLunch.type})${selectedLunch.city ? ` — ${selectedLunch.city}` : ""}`
                           : null;
-                      } else {
+                      } else if (stop.label === "Dinner") {
                         detail = dinnerCitiesReady ? dinnerCitiesByDay![i] : null;
+                      } else if (stop.label === "Fuel" && stop.fuelStopIndex !== undefined) {
+                        const fuelStop = fuelStopsByDay?.[i]?.[stop.fuelStopIndex];
+                        detail = fuelStop
+                          ? `${fuelStop.city} ($${fuelStop.avgPricePerGallon.toFixed(2)}/gal avg)`
+                          : null;
                       }
                       return {
-                        label: stop.label as string,
+                        label: stop.label === "Fuel" ? "Fuel stop" : (stop.label as string),
                         detail,
                         secondsSinceMidnight: stop.secondsSinceMidnight,
                       };
