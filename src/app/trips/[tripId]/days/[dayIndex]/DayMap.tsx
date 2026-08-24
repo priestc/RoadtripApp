@@ -305,6 +305,7 @@ function DayMapInner({
     const plan: Record<
       string,
       {
+        unreachable: boolean;
         gallonsRemaining: number;
         tankPercent: number;
         fillUpCost: number;
@@ -318,6 +319,10 @@ function DayMapInner({
 
     sorted.forEach((stop, i) => {
       const milesFromStart = stop.drivingFraction * dayMiles;
+      // Only the first stop's reachability depends on the entered range --
+      // every later stop is assumed reachable, since the plan always buys
+      // (or assumes) enough fuel at the prior stop to get there.
+      const unreachable = i === 0 && milesFromStart > fuelRangeMiles - FUEL_RESERVE_MILES;
       rangeMiles = Math.max(0, rangeMiles - (milesFromStart - prevMiles));
 
       const gallonsRemaining = rangeMiles / vehicle.gasMileageMpg;
@@ -342,6 +347,7 @@ function DayMapInner({
       }
 
       plan[stop.city] = {
+        unreachable,
         gallonsRemaining,
         tankPercent,
         fillUpCost,
@@ -711,7 +717,15 @@ function DayMapInner({
               );
 
               const plan = row.fuelStop ? fuelStopPlan?.[row.fuelStop.city] : undefined;
-              if (plan) {
+              if (plan?.unreachable) {
+                elements.push(
+                  <div key={`${i}-plan`} className="py-0.5 pl-8 text-xs text-red-500">
+                    <p>
+                      Not reachable with your current fuel range — move this fuel stop earlier.
+                    </p>
+                  </div>
+                );
+              } else if (plan) {
                 elements.push(
                   <div key={`${i}-plan`} className="space-y-0.5 py-0.5 pl-8 text-xs text-slate-400">
                     <p>
