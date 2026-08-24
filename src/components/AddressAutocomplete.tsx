@@ -13,9 +13,12 @@ interface AddressAutocompleteProps {
 }
 
 /**
- * A text input with Google Places address autocomplete. Falls back to a
- * plain text input if no Maps API key is configured, so the rest of the
- * app doesn't break for local dev before that's set up.
+ * A text input with Google Places address autocomplete, built on the
+ * PlaceAutocompleteElement web component (the legacy google.maps.places.
+ * Autocomplete widget isn't available to Google Cloud projects created
+ * after March 2025). Falls back to a plain text input if no Maps API key
+ * is configured, so the rest of the app doesn't break for local dev before
+ * that's set up.
  */
 export default function AddressAutocomplete(props: AddressAutocompleteProps) {
   if (!GOOGLE_MAPS_API_KEY) {
@@ -43,48 +46,54 @@ function AddressAutocompleteInner({
   placeholder,
 }: AddressAutocompleteProps) {
   const placesLibrary = useMapsLibrary("places");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const elementRef = useRef<google.maps.places.PlaceAutocompleteElement | null>(
+    null
+  );
   const onChangeRef = useRef(onChange);
 
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  // The Autocomplete widget writes directly into the input's DOM value when
-  // a suggestion is picked, so this input is intentionally uncontrolled —
-  // fighting that with a React-controlled `value` would break selection.
+  // Create the widget once per (library, placeholder) pair — recreating it
+  // on every `value` change would tear down in-progress typing, so that's
+  // synced separately below instead.
   useEffect(() => {
-    if (!placesLibrary || !inputRef.current) return;
-    const autocomplete = new placesLibrary.Autocomplete(inputRef.current, {
-      types: ["address"],
-    });
-    const listener = autocomplete.addListener("place_changed", () => {
-      const place = autocomplete.getPlace();
-      const address = place.formatted_address ?? inputRef.current?.value ?? "";
-      onChangeRef.current(address);
-    });
-    return () => {
-      listener.remove();
-      google.maps.event.clearInstanceListeners(autocomplete);
-    };
-  }, [placesLibrary]);
+    if (!placesLibrary || !containerRef.current) return;
 
-  // Keep the field in sync when `value` changes from outside (e.g. the
-  // saved address loads asynchronously), without clobbering active typing.
+    const element = new placesLibrary.PlaceAutocompleteElement({
+      value,
+      placeholder: placeholder ?? null,
+    });
+    elementRef.current = element;
+    containerRef.current.appendChild(element);
+
+    const handleSelect = (event: Event) => {
+      const { placePrediction } = event as google.maps.places.PlacePredictionSelectEvent;
+      (async () => {
+        const place = placePrediction.toPlace();
+        await place.fetchFields({ fields: ["formattedAddress"] });
+        onChangeRef.current(place.formattedAddress ?? element.value ?? "");
+      })();
+    };
+    element.addEventListener("gmp-select", handleSelect);
+
+    return () => {
+      element.removeEventListener("gmp-select", handleSelect);
+      element.remove();
+      elementRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placesLibrary, placeholder]);
+
+  // Keep the widget in sync when `value` changes from outside (e.g. the
+  // saved address loads asynchronously).
   useEffect(() => {
-    if (inputRef.current && document.activeElement !== inputRef.current) {
-      inputRef.current.value = value;
+    if (elementRef.current && elementRef.current.value !== value) {
+      elementRef.current.value = value;
     }
   }, [value]);
 
-  return (
-    <input
-      ref={inputRef}
-      type="text"
-      defaultValue={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={inputClass}
-    />
-  );
+  return <div ref={containerRef} className="w-full" />;
 }
