@@ -99,9 +99,11 @@ export default function DayDetailPage() {
 
   function handleFuelStopsChange(stops: FuelStopSelection[]) {
     if (!params.tripId || !trip) return;
+    // Each day's stops must be wrapped in an object -- Firestore rejects an
+    // array nested directly inside another array.
     const updated = [...(trip.fuelStopsByDay ?? [])];
-    while (updated.length <= dayIndex) updated.push([]);
-    updated[dayIndex] = stops;
+    while (updated.length <= dayIndex) updated.push({ stops: [] });
+    updated[dayIndex] = { stops };
     updateDoc(doc(getFirebaseDb(), "trips", params.tripId), {
       fuelStopsByDay: updated,
     }).catch(() => {

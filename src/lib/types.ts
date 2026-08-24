@@ -33,7 +33,9 @@ export interface Trip {
   // Per-day fuel stops -- zero or more cities picked by clicking their
   // markers on that day's Gas map. Indexed the same way as
   // lunchChoicesByDay; a missing/short entry defaults to no fuel stops.
-  fuelStopsByDay?: Array<FuelStopSelection[]>;
+  // Each day's stops are wrapped in an object (rather than a plain array)
+  // because Firestore rejects an array directly nested inside another array.
+  fuelStopsByDay?: Array<{ stops: FuelStopSelection[] }>;
   // Firestore server timestamp; typed loosely since the client only ever reads it
   createdAt: unknown;
 }
