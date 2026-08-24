@@ -289,6 +289,71 @@ function DayMapInner({
     return { gallonsRemaining, tankPercent, fillUpCost };
   }, [day, vehicle, reachableGas, fuelRangeMiles]);
 
+  // For each added fuel stop (in route order), how much fuel is left on
+  // arrival, what a full fill-up there would cost, and -- when the next
+  // fuel stop down the road is cheaper -- how many gallons to buy here to
+  // just reach that next stop with the fixed reserve left, rather than
+  // topping all the way off at the pricier stop. Assumes a full top-off at
+  // any stop where the next one isn't cheaper.
+  const fuelStopPlan = useMemo(() => {
+    if (!day || !vehicle || fuelRangeMiles === null || initialFuelStops.length === 0) {
+      return null;
+    }
+    const dayMiles = metersToMiles(day.distanceMeters);
+    const sorted = [...initialFuelStops].sort((a, b) => a.drivingFraction - b.drivingFraction);
+
+    const plan: Record<
+      string,
+      {
+        gallonsRemaining: number;
+        tankPercent: number;
+        fillUpCost: number;
+        cheaperAhead: boolean;
+        gallonsToBuyForNextCheaper: number | null;
+      }
+    > = {};
+
+    let rangeMiles = fuelRangeMiles;
+    let prevMiles = 0;
+
+    sorted.forEach((stop, i) => {
+      const milesFromStart = stop.drivingFraction * dayMiles;
+      rangeMiles = Math.max(0, rangeMiles - (milesFromStart - prevMiles));
+
+      const gallonsRemaining = rangeMiles / vehicle.gasMileageMpg;
+      const tankPercent = (gallonsRemaining / vehicle.fuelCapacityGallons) * 100;
+      const fillUpCost =
+        Math.max(0, vehicle.fuelCapacityGallons - gallonsRemaining) * stop.avgPricePerGallon;
+
+      const next = sorted[i + 1];
+      const cheaperAhead = !!next && next.avgPricePerGallon < stop.avgPricePerGallon;
+
+      let gallonsToBuyForNextCheaper: number | null = null;
+      if (cheaperAhead && next) {
+        const milesToNext = next.drivingFraction * dayMiles - milesFromStart;
+        const gallonsNeeded = Math.min(
+          vehicle.fuelCapacityGallons,
+          (milesToNext + FUEL_RESERVE_MILES) / vehicle.gasMileageMpg
+        );
+        gallonsToBuyForNextCheaper = Math.max(0, gallonsNeeded - gallonsRemaining);
+        rangeMiles = (gallonsRemaining + gallonsToBuyForNextCheaper) * vehicle.gasMileageMpg;
+      } else {
+        rangeMiles = vehicle.fuelCapacityGallons * vehicle.gasMileageMpg;
+      }
+
+      plan[stop.city] = {
+        gallonsRemaining,
+        tankPercent,
+        fillUpCost,
+        cheaperAhead,
+        gallonsToBuyForNextCheaper,
+      };
+      prevMiles = milesFromStart;
+    });
+
+    return plan;
+  }, [day, vehicle, fuelRangeMiles, initialFuelStops]);
+
   const itinerary = useMemo(() => {
     if (!day || dayHasDinner === null) return null;
     const lunch = initialLunchChoice
@@ -644,6 +709,26 @@ function DayMapInner({
                   )}
                 </div>
               );
+
+              const plan = row.fuelStop ? fuelStopPlan?.[row.fuelStop.city] : undefined;
+              if (plan) {
+                elements.push(
+                  <div key={`${i}-plan`} className="space-y-0.5 py-0.5 pl-8 text-xs text-slate-400">
+                    <p>
+                      ~{plan.gallonsRemaining.toFixed(1)} gal on arrival (
+                      {plan.tankPercent.toFixed(0)}% of tank)
+                    </p>
+                    <p>Fill up completely here: ~${plan.fillUpCost.toFixed(2)}</p>
+                    {plan.cheaperAhead && (
+                      <p>
+                        Next stop is cheaper — buy ~
+                        {plan.gallonsToBuyForNextCheaper!.toFixed(1)} gal here to reach it with
+                        reserve instead of filling up
+                      </p>
+                    )}
+                  </div>
+                );
+              }
             });
 
             return elements;
