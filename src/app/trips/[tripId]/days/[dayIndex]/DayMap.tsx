@@ -79,6 +79,7 @@ export default function DayMap({
   initialFuelStops,
   onFuelStopsChange,
   onBoundaryCitiesChange,
+  onNumDaysChange,
   vehicle,
 }: {
   dayIndex: number;
@@ -90,6 +91,7 @@ export default function DayMap({
   initialFuelStops: FuelStopSelection[];
   onFuelStopsChange: (stops: FuelStopSelection[]) => void;
   onBoundaryCitiesChange?: (cities: { start: string | null; end: string | null }) => void;
+  onNumDaysChange?: (numDays: number) => void;
   vehicle: TripVehicle | null;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
@@ -112,6 +114,7 @@ export default function DayMap({
         initialFuelStops={initialFuelStops}
         onFuelStopsChange={onFuelStopsChange}
         onBoundaryCitiesChange={onBoundaryCitiesChange}
+        onNumDaysChange={onNumDaysChange}
         vehicle={vehicle}
       />
     </APIProvider>
@@ -128,6 +131,7 @@ function DayMapInner({
   initialFuelStops,
   onFuelStopsChange,
   onBoundaryCitiesChange,
+  onNumDaysChange,
   vehicle,
 }: {
   dayIndex: number;
@@ -139,6 +143,7 @@ function DayMapInner({
   initialFuelStops: FuelStopSelection[];
   onFuelStopsChange: (stops: FuelStopSelection[]) => void;
   onBoundaryCitiesChange?: (cities: { start: string | null; end: string | null }) => void;
+  onNumDaysChange?: (numDays: number) => void;
   vehicle: TripVehicle | null;
 }) {
   const map = useMap();
@@ -187,6 +192,10 @@ function DayMapInner({
     if (!leg || !numDays) return null;
     return splitRouteIntoDays(leg, numDays);
   }, [leg, numDays]);
+
+  useEffect(() => {
+    if (numDays !== null) onNumDaysChange?.(numDays);
+  }, [numDays, onNumDaysChange]);
 
   const day: RouteDaySegment | null =
     days && dayIndex >= 0 && dayIndex < days.length ? days[dayIndex] : null;

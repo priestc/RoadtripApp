@@ -33,6 +33,7 @@ export default function DayDetailPage() {
     start: string | null;
     end: string | null;
   } | null>(null);
+  const [totalDays, setTotalDays] = useState<number | null>(null);
 
   const dayIndex = Number(params.dayIndex);
 
@@ -154,6 +155,7 @@ export default function DayDetailPage() {
           initialFuelStops={initialFuelStops}
           onFuelStopsChange={handleFuelStopsChange}
           onBoundaryCitiesChange={setBoundaryCities}
+          onNumDaysChange={setTotalDays}
           vehicle={
             selectedVehicle
               ? {
@@ -163,6 +165,17 @@ export default function DayDetailPage() {
               : null
           }
         />
+
+        {totalDays !== null && dayIndex + 1 < totalDays && (
+          <div className="text-right">
+            <Link
+              href={`/trips/${params.tripId}/days/${dayIndex + 1}`}
+              className="text-sm font-medium text-slate-600 hover:text-slate-900"
+            >
+              Day {dayIndex + 2} itinerary →
+            </Link>
+          </div>
+        )}
       </div>
     </main>
   );
