@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -36,6 +36,17 @@ export default function DayDetailPage() {
   const [totalDays, setTotalDays] = useState<number | null>(null);
 
   const dayIndex = Number(params.dayIndex);
+
+  // Memoized so this array's identity only changes when the underlying
+  // Firestore data actually does -- sanitizeFuelStops always returns a new
+  // array, and an unmemoized value here was recreated on every render
+  // (including ones triggered by DayMap's own onBoundaryCitiesChange /
+  // onNumDaysChange callbacks), which busted DayMap's itinerary memo and
+  // re-ran its geocoding effect in a tight loop on every render.
+  const initialFuelStops = useMemo(
+    () => sanitizeFuelStops(trip?.fuelStopsByDay?.[dayIndex]),
+    [trip, dayIndex]
+  );
 
   useEffect(() => {
     if (authLoading) return;
@@ -118,8 +129,6 @@ export default function DayDetailPage() {
 
   const rawChoice = trip.lunchChoicesByDay?.[dayIndex];
   const initialLunchChoice = isLunchSelection(rawChoice) ? rawChoice : null;
-
-  const initialFuelStops = sanitizeFuelStops(trip.fuelStopsByDay?.[dayIndex]);
 
   const vehicleId = trip.vehicleId ?? "";
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId) ?? null;

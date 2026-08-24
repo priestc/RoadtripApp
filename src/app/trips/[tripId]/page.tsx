@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import {
@@ -29,6 +29,19 @@ export default function TripDetailPage() {
   );
   const [fuelRangeOverride, setFuelRangeOverride] = useState<string | null>(
     null
+  );
+
+  // Memoized so these identities only change when the underlying Firestore
+  // data actually does -- sanitizeFuelStops/.map() otherwise return a new
+  // array on every render, which busts RouteMap's internal memoization and
+  // re-runs its geocoding effect unnecessarily.
+  const lunchChoicesByDay = useMemo(
+    () => trip?.lunchChoicesByDay?.map((choice) => (isLunchSelection(choice) ? choice : null)),
+    [trip]
+  );
+  const fuelStopsByDay = useMemo(
+    () => trip?.fuelStopsByDay?.map(sanitizeFuelStops),
+    [trip]
   );
 
   useEffect(() => {
@@ -115,15 +128,6 @@ export default function TripDetailPage() {
       // Non-critical — the map already reflects the current value locally.
     });
   }
-
-  // Guards against trips saved under an older version of this field's shape
-  // (it's changed more than once) -- an invalid entry becomes "no lunch"
-  // rather than crashing the map on a malformed marker position.
-  const lunchChoicesByDay = trip.lunchChoicesByDay?.map((choice) =>
-    isLunchSelection(choice) ? choice : null
-  );
-
-  const fuelStopsByDay = trip.fuelStopsByDay?.map(sanitizeFuelStops);
 
   const vehicleId = vehicleIdOverride ?? trip.vehicleId ?? "";
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId) ?? null;
