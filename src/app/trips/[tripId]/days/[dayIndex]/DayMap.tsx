@@ -233,6 +233,20 @@ function DayMapInner({
     };
   }, [day, dayHasDinner, geometryLibrary, maxDrivingFraction]);
 
+  // How much fuel would be left when reaching the cheapest reachable gas
+  // stop, and what topping back off to a full tank would cost there.
+  const arrivalFuelInfo = useMemo(() => {
+    if (!day || !vehicle || !reachableGas || fuelRangeMiles === null) return null;
+    const distanceToStationMiles =
+      reachableGas.drivingFraction * metersToMiles(day.distanceMeters);
+    const milesRemaining = Math.max(0, fuelRangeMiles - distanceToStationMiles);
+    const gallonsRemaining = milesRemaining / vehicle.gasMileageMpg;
+    const tankPercent = (gallonsRemaining / vehicle.fuelCapacityGallons) * 100;
+    const gallonsToFill = Math.max(0, vehicle.fuelCapacityGallons - gallonsRemaining);
+    const fillUpCost = gallonsToFill * reachableGas.avgPricePerGallon;
+    return { gallonsRemaining, tankPercent, fillUpCost };
+  }, [day, vehicle, reachableGas, fuelRangeMiles]);
+
   const itinerary = useMemo(() => {
     if (!day || dayHasDinner === null) return null;
     const lunch = initialLunchChoice
@@ -407,15 +421,28 @@ function DayMapInner({
             className="mt-1 w-36 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none"
           />
           {fuelRangeMiles !== null && (
-            <p className="mt-2 text-xs text-slate-600">
-              {maxDrivingFraction !== null && maxDrivingFraction <= 0
-                ? `You're already within your ${FUEL_RESERVE_MILES}-mile reserve — refuel before continuing.`
-                : reachableGas === undefined
-                  ? "Checking for gas within your range…"
-                  : reachableGas
-                    ? `Cheapest gas within range: ${reachableGas.city} ($${reachableGas.avgPricePerGallon.toFixed(2)}/gal avg), arriving around ${formatSecondsAsClockTime(reachableGas.secondsSinceMidnight)}`
-                    : `No gas stations found before you'd hit your ${FUEL_RESERVE_MILES}-mile reserve.`}
-            </p>
+            <div className="mt-2 text-xs text-slate-600">
+              <p>
+                {maxDrivingFraction !== null && maxDrivingFraction <= 0
+                  ? `You're already within your ${FUEL_RESERVE_MILES}-mile reserve — refuel before continuing.`
+                  : reachableGas === undefined
+                    ? "Checking for gas within your range…"
+                    : reachableGas
+                      ? `Cheapest gas within range: ${reachableGas.city} ($${reachableGas.avgPricePerGallon.toFixed(2)}/gal avg), arriving around ${formatSecondsAsClockTime(reachableGas.secondsSinceMidnight)}`
+                      : `No gas stations found before you'd hit your ${FUEL_RESERVE_MILES}-mile reserve.`}
+              </p>
+              {arrivalFuelInfo && (
+                <>
+                  <p>
+                    Fuel left on arrival: ~{arrivalFuelInfo.gallonsRemaining.toFixed(1)} gal (
+                    {arrivalFuelInfo.tankPercent.toFixed(0)}% of tank)
+                  </p>
+                  <p>
+                    Cost to fill up there: ~${arrivalFuelInfo.fillUpCost.toFixed(2)}
+                  </p>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
