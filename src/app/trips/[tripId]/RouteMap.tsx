@@ -18,11 +18,13 @@ import {
   formatMiles,
   formatSecondsAsClockTime,
   getDefaultNumDays,
+  getLunchCandidates,
   getMaxDayOptions,
-  getMealStops,
   getRouteDurationSeconds,
+  hasDinnerStop,
   milesToMeters,
   splitRouteIntoDays,
+  type LunchChoice,
   type RouteDaySegment,
 } from "@/lib/routeDays";
 
@@ -46,12 +48,16 @@ export default function RouteMap({
   initialNumDays,
   onNumDaysChange,
   fuelRangeMiles,
+  initialLunchChoices,
+  onLunchChoicesChange,
 }: {
   departureLocation: string;
   destination: string;
   initialNumDays?: number;
   onNumDaysChange: (numDays: number) => void;
   fuelRangeMiles: number | null;
+  initialLunchChoices?: Array<LunchChoice | null>;
+  onLunchChoicesChange: (choices: Array<LunchChoice | null>) => void;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
     return (
@@ -69,6 +75,8 @@ export default function RouteMap({
         initialNumDays={initialNumDays}
         onNumDaysChange={onNumDaysChange}
         fuelRangeMiles={fuelRangeMiles}
+        initialLunchChoices={initialLunchChoices}
+        onLunchChoicesChange={onLunchChoicesChange}
       />
     </APIProvider>
   );
@@ -80,12 +88,16 @@ function RouteMapInner({
   initialNumDays,
   onNumDaysChange,
   fuelRangeMiles,
+  initialLunchChoices,
+  onLunchChoicesChange,
 }: {
   departureLocation: string;
   destination: string;
   initialNumDays?: number;
   onNumDaysChange: (numDays: number) => void;
   fuelRangeMiles: number | null;
+  initialLunchChoices?: Array<LunchChoice | null>;
+  onLunchChoicesChange: (choices: Array<LunchChoice | null>) => void;
 }) {
   const map = useMap();
   const routesLibrary = useMapsLibrary("routes");
@@ -159,22 +171,64 @@ function RouteMapInner({
     return findPointAtDistance(leg, milesToMeters(fuelRangeMiles));
   }, [leg, fuelRangeMiles]);
 
-  // Which meal stops each day gets — kept as its own memo (rather than
-  // recomputed inline) so the geocoding effect and the render below always
-  // agree on the exact same itinerary shape.
-  const dayMealStops = useMemo(
-    () => days?.map((day) => getMealStops(day.durationSeconds)) ?? null,
+  // Whether each day gets an automatic dinner stop.
+  const dayHasDinner = useMemo(
+    () => days?.map((day) => hasDinnerStop(day.durationSeconds)) ?? null,
     [days]
   );
+
+  // The two lunch options (early/late) for each day, computed against that
+  // day's baseline (no-lunch) schedule — stable regardless of what's
+  // currently selected, so the picker's options don't shift as you toggle.
+  const lunchCandidatesByDay = useMemo(() => {
+    if (!days || !dayHasDinner) return null;
+    return days.map((day, i) =>
+      getLunchCandidates(day.durationSeconds, dayHasDinner[i])
+    );
+  }, [days, dayHasDinner]);
+
+  // Per-day lunch choice: explicit per-day overrides layered on top of
+  // whatever was saved on the trip. Using a plain object (day index -> value)
+  // rather than a full array lets a single day's toggle update independently.
+  const [lunchChoiceOverrides, setLunchChoiceOverrides] = useState<
+    Record<number, LunchChoice | null>
+  >({});
+
+  const lunchChoices = useMemo(() => {
+    if (!days) return null;
+    return days.map((_, i) =>
+      i in lunchChoiceOverrides
+        ? lunchChoiceOverrides[i]
+        : (initialLunchChoices?.[i] ?? null)
+    );
+  }, [days, lunchChoiceOverrides, initialLunchChoices]);
+
+  function handleLunchChoiceChange(dayIndex: number, choice: LunchChoice | null) {
+    const updated = { ...lunchChoiceOverrides, [dayIndex]: choice };
+    setLunchChoiceOverrides(updated);
+    if (!days) return;
+    const fullChoices = days.map((_, i) =>
+      i in updated ? updated[i] : (initialLunchChoices?.[i] ?? null)
+    );
+    onLunchChoicesChange(fullChoices);
+  }
 
   // The full stop-by-stop itinerary (Departure/Lunch/Dinner/Arrival, each
   // with a clock time and a driving-path fraction) for every day. Shared by
   // the geocoding effect, the map markers, and the day list below so they
   // all agree on exactly the same points.
   const dayItineraries = useMemo(() => {
-    if (!days || !dayMealStops) return null;
-    return days.map((day, i) => buildDayItinerary(day.durationSeconds, dayMealStops[i]));
-  }, [days, dayMealStops]);
+    if (!days || !dayHasDinner || !lunchCandidatesByDay || !lunchChoices) {
+      return null;
+    }
+    return days.map((day, i) => {
+      const choice = lunchChoices[i];
+      const lunch = choice
+        ? { choice, candidate: lunchCandidatesByDay[i][choice] }
+        : null;
+      return buildDayItinerary(day.durationSeconds, dayHasDinner[i], lunch);
+    });
+  }, [days, dayHasDinner, lunchCandidatesByDay, lunchChoices]);
 
   // Boundary points between days: [overall start, end of day 1 (= start of
   // day 2), ..., overall end]. Geocoding just these (numDays + 1 points)
@@ -182,14 +236,25 @@ function RouteMapInner({
   const [boundaryCities, setBoundaryCities] = useState<(string | null)[] | null>(
     null
   );
-  // Per day, one city name per meal stop, in the same order as that day's
-  // meal stops (e.g. [lunchCity] or [lunchCity, dinnerCity]).
-  const [mealCitiesByDay, setMealCitiesByDay] = useState<
-    (string | null)[][] | null
+  // Per day, the dinner stop's city (only meaningful for days with dinner).
+  const [dinnerCitiesByDay, setDinnerCitiesByDay] = useState<
+    (string | null)[] | null
+  >(null);
+  // Per day, both lunch candidates' cities — geocoded unconditionally so the
+  // picker can show real city names for both options before one is chosen.
+  const [lunchCandidateCitiesByDay, setLunchCandidateCitiesByDay] = useState<
+    Array<{ early: string | null; late: string | null }> | null
   >(null);
 
   useEffect(() => {
-    if (!days || !dayItineraries || !geocodingLibrary) return;
+    if (
+      !days ||
+      !dayItineraries ||
+      !lunchCandidatesByDay ||
+      !geocodingLibrary
+    ) {
+      return;
+    }
     let cancelled = false;
     const geocoder = new geocodingLibrary.Geocoder();
 
@@ -208,25 +273,44 @@ function RouteMapInner({
       ...days.map((day) => day.path[day.path.length - 1]),
     ];
 
-    const mealPointsByDay = days.map((day, i) =>
-      dayItineraries[i]
-        .filter((stop) => stop.label === "Lunch" || stop.label === "Dinner")
-        .map((stop) => pointAtFraction(day, stop.drivingFraction))
-    );
+    const dinnerDayIndices: number[] = [];
+    const dinnerPoints: google.maps.LatLngLiteral[] = [];
+    days.forEach((day, i) => {
+      const dinnerStop = dayItineraries[i].find((s) => s.label === "Dinner");
+      if (dinnerStop) {
+        dinnerDayIndices.push(i);
+        dinnerPoints.push(pointAtFraction(day, dinnerStop.drivingFraction));
+      }
+    });
+
+    const lunchCandidatePoints = days.map((day, i) => [
+      pointAtFraction(day, lunchCandidatesByDay[i].early.drivingFraction),
+      pointAtFraction(day, lunchCandidatesByDay[i].late.drivingFraction),
+    ]);
 
     Promise.all([
       geocodeAll(boundaryPoints),
-      Promise.all(mealPointsByDay.map((points) => geocodeAll(points))),
-    ]).then(([boundaryResults, mealResults]) => {
+      geocodeAll(dinnerPoints),
+      Promise.all(lunchCandidatePoints.map((points) => geocodeAll(points))),
+    ]).then(([boundaryResults, dinnerResults, lunchResults]) => {
       if (cancelled) return;
       setBoundaryCities(boundaryResults);
-      setMealCitiesByDay(mealResults);
+
+      const dinnerCities = days.map(() => null as string | null);
+      dinnerDayIndices.forEach((dayIndex, k) => {
+        dinnerCities[dayIndex] = dinnerResults[k];
+      });
+      setDinnerCitiesByDay(dinnerCities);
+
+      setLunchCandidateCitiesByDay(
+        lunchResults.map(([early, late]) => ({ early, late }))
+      );
     });
 
     return () => {
       cancelled = true;
     };
-  }, [days, dayItineraries, geocodingLibrary]);
+  }, [days, dayItineraries, lunchCandidatesByDay, geocodingLibrary]);
 
   return (
     <div className="space-y-3">
@@ -305,66 +389,100 @@ function RouteMapInner({
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {days && days.length > 0 && dayItineraries && (
-        <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-          {days.map((day, i) => {
-            const itinerary = dayItineraries[i];
+      {days &&
+        days.length > 0 &&
+        dayItineraries &&
+        lunchCandidatesByDay &&
+        lunchChoices && (
+          <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+            {days.map((day, i) => {
+              const itinerary = dayItineraries[i];
+              const candidates = lunchCandidatesByDay[i];
+              const selectedLunch = lunchChoices[i];
 
-            // Only trust the geocoded city arrays once they match the
-            // current day count — they can briefly lag behind `days` after
-            // the dropdown changes, while new geocode requests are in
-            // flight.
-            const boundaryCitiesReady =
-              boundaryCities?.length === days.length + 1;
-            const mealCitiesReady = mealCitiesByDay?.length === days.length;
+              // Only trust the geocoded city arrays once they match the
+              // current day count — they can briefly lag behind `days` after
+              // the dropdown changes, while new geocode requests are in
+              // flight.
+              const boundaryCitiesReady =
+                boundaryCities?.length === days.length + 1;
+              const dinnerCitiesReady = dinnerCitiesByDay?.length === days.length;
+              const lunchCitiesReady =
+                lunchCandidateCitiesByDay?.length === days.length;
+              const lunchCities = lunchCitiesReady
+                ? lunchCandidateCitiesByDay![i]
+                : null;
 
-            let mealIndex = 0;
+              return (
+                <div key={i} className="px-4 py-3 text-sm">
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span
+                      className="inline-block h-3 w-3 shrink-0 rounded-full"
+                      style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
+                    />
+                    <span className="font-medium text-slate-700">Day {i + 1}</span>
+                    <span className="text-slate-400">
+                      {formatMiles(day.distanceMeters)} ·{" "}
+                      {formatDuration(day.durationSeconds)} driving
+                    </span>
+                  </div>
 
-            return (
-              <div key={i} className="px-4 py-3 text-sm">
-                <div className="mb-1.5 flex items-center gap-2">
-                  <span
-                    className="inline-block h-3 w-3 shrink-0 rounded-full"
-                    style={{ backgroundColor: DAY_COLORS[i % DAY_COLORS.length] }}
-                  />
-                  <span className="font-medium text-slate-700">Day {i + 1}</span>
-                  <span className="text-slate-400">
-                    {formatMiles(day.distanceMeters)} ·{" "}
-                    {formatDuration(day.durationSeconds)} driving
-                  </span>
+                  <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 pl-5 text-xs text-slate-600">
+                    {(["early", "late"] as const).map((option) => {
+                      const candidate = candidates[option];
+                      const cityLabel = lunchCities?.[option];
+                      const checked = selectedLunch === option;
+                      return (
+                        <label key={option} className="flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              handleLunchChoiceChange(i, checked ? null : option)
+                            }
+                          />
+                          {option === "early" ? "Early lunch" : "Late lunch"}
+                          {cityLabel ? ` — ${cityLabel}` : ""} (
+                          {formatSecondsAsClockTime(candidate.secondsSinceMidnight)})
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="space-y-0.5 pl-5">
+                    {itinerary.map((stop, stopIndex) => {
+                      let city: string | null = null;
+                      if (stop.label === "Departure") {
+                        city = boundaryCitiesReady ? boundaryCities![i] : null;
+                      } else if (stop.label === "Arrival") {
+                        city = boundaryCitiesReady ? boundaryCities![i + 1] : null;
+                      } else if (stop.label === "Lunch") {
+                        city =
+                          selectedLunch && lunchCities
+                            ? lunchCities[selectedLunch]
+                            : null;
+                      } else {
+                        city = dinnerCitiesReady ? dinnerCitiesByDay![i] : null;
+                      }
+                      return (
+                        <div
+                          key={stopIndex}
+                          className="flex items-center justify-between text-slate-500"
+                        >
+                          <span>
+                            {stop.label}
+                            {city ? ` — ${city}` : ""}
+                          </span>
+                          <span>{formatSecondsAsClockTime(stop.secondsSinceMidnight)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="space-y-0.5 pl-5">
-                  {itinerary.map((stop, stopIndex) => {
-                    let city: string | null = null;
-                    if (stop.label === "Departure") {
-                      city = boundaryCitiesReady ? boundaryCities![i] : null;
-                    } else if (stop.label === "Arrival") {
-                      city = boundaryCitiesReady ? boundaryCities![i + 1] : null;
-                    } else {
-                      city = mealCitiesReady
-                        ? mealCitiesByDay![i][mealIndex]
-                        : null;
-                      mealIndex += 1;
-                    }
-                    return (
-                      <div
-                        key={stopIndex}
-                        className="flex items-center justify-between text-slate-500"
-                      >
-                        <span>
-                          {stop.label}
-                          {city ? ` — ${city}` : ""}
-                        </span>
-                        <span>{formatSecondsAsClockTime(stop.secondsSinceMidnight)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
     </div>
   );
 }

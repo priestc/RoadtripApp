@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
+import type { LunchChoice } from "@/lib/routeDays";
 import type { Trip, Vehicle } from "@/lib/types";
 import RouteMap from "./RouteMap";
 
@@ -115,6 +116,15 @@ export default function TripDetailPage() {
     });
   }
 
+  function handleLunchChoicesChange(lunchChoicesByDay: Array<LunchChoice | null>) {
+    if (!params.tripId) return;
+    updateDoc(doc(getFirebaseDb(), "trips", params.tripId), {
+      lunchChoicesByDay,
+    }).catch(() => {
+      // Non-critical — the map already reflects the selection locally.
+    });
+  }
+
   const vehicleId = vehicleIdOverride ?? trip.vehicleId ?? "";
   const fuelRangeInput =
     fuelRangeOverride ??
@@ -190,6 +200,8 @@ export default function TripDetailPage() {
           initialNumDays={trip.numDrivingDays}
           onNumDaysChange={handleNumDaysChange}
           fuelRangeMiles={fuelRangeMiles}
+          initialLunchChoices={trip.lunchChoicesByDay}
+          onLunchChoicesChange={handleLunchChoicesChange}
         />
       </div>
     </main>

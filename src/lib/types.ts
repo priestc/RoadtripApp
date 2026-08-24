@@ -1,3 +1,5 @@
+import type { LunchChoice } from "@/lib/routeDays";
+
 export interface DrivingPreferences {
   onboardingComplete: true;
   homeAddress?: string;
@@ -24,6 +26,10 @@ export interface Trip {
   // Current fuel range in miles, as of the start of the trip -- used to
   // place the first fill-up point on the map.
   currentFuelRangeMiles?: number;
+  // Per-day lunch choice ("early" = city at the start of the lunch window,
+  // "late" = city at the end of it, null = no lunch that day), indexed by
+  // day. Unset/shorter-than-days-length entries default to null (no lunch).
+  lunchChoicesByDay?: Array<LunchChoice | null>;
   // Firestore server timestamp; typed loosely since the client only ever reads it
   createdAt: unknown;
 }
