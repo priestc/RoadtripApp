@@ -79,7 +79,12 @@ function markerPosition(
   stop: DayItineraryStop,
   selectedLunch: LunchSelection | null
 ): google.maps.LatLngLiteral {
-  if (stop.label === "Lunch" && selectedLunch) {
+  if (
+    stop.label === "Lunch" &&
+    selectedLunch &&
+    Number.isFinite(selectedLunch.lat) &&
+    Number.isFinite(selectedLunch.lng)
+  ) {
     return { lat: selectedLunch.lat, lng: selectedLunch.lng };
   }
   return pointAtFraction(day, stop.drivingFraction);

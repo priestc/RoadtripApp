@@ -306,6 +306,28 @@ export interface LunchSelection {
 }
 
 /**
+ * Validates a value loaded from Firestore actually matches LunchSelection's
+ * shape. Firestore doesn't enforce a schema, and this shape has changed
+ * more than once (originally just "early"/"late" strings, then an object
+ * without lat/lng) -- a trip saved under an older version would otherwise
+ * pass a malformed object all the way to the Maps SDK, which throws a hard,
+ * uncaught error on an invalid marker position rather than failing softly.
+ */
+export function isLunchSelection(value: unknown): value is LunchSelection {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.placeId === "string" &&
+    typeof v.name === "string" &&
+    typeof v.type === "string" &&
+    typeof v.lat === "number" &&
+    typeof v.lng === "number" &&
+    typeof v.drivingFraction === "number" &&
+    typeof v.secondsSinceMidnight === "number"
+  );
+}
+
+/**
  * Builds the full stop-by-stop itinerary for a driving day: departure, an
  * optional lunch stop (only if the user picked a specific restaurant from
  * the search-along-route results), an optional automatic dinner stop, and
