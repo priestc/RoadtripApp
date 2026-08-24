@@ -68,10 +68,10 @@ function extractCity(components: AddressComponent[] | undefined): string | null 
   return state?.shortText ? `${city}, ${state.shortText}` : city;
 }
 
-// Gas prices are assumed static for the day (an intentional simplification
-// -- see DESIGN.md), so the same generous TTL as the lunch-search cache is
-// appropriate here too.
-const gasSearchCache = new ApiCache<GasSearchResult[]>(24 * 60 * 60 * 1000);
+// Gas prices change more often than restaurant listings, so this cache is
+// much shorter-lived than the lunch-search cache -- a station's price is
+// reused for up to an hour, then re-fetched.
+const gasSearchCache = new ApiCache<GasSearchResult[]>(60 * 60 * 1000);
 
 /**
  * Searches for gas stations along a driving route with current regular
