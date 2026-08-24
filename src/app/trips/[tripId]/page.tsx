@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
-import { isFuelStopSelection, isLunchSelection } from "@/lib/routeDays";
+import { isLunchSelection, sanitizeFuelStops } from "@/lib/routeDays";
 import type { Trip, Vehicle } from "@/lib/types";
 import RouteMap from "./RouteMap";
 
@@ -123,9 +123,7 @@ export default function TripDetailPage() {
     isLunchSelection(choice) ? choice : null
   );
 
-  const fuelStopsByDay = trip.fuelStopsByDay?.map((stops) =>
-    (stops ?? []).filter(isFuelStopSelection)
-  );
+  const fuelStopsByDay = trip.fuelStopsByDay?.map(sanitizeFuelStops);
 
   const vehicleId = vehicleIdOverride ?? trip.vehicleId ?? "";
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId) ?? null;

@@ -373,6 +373,19 @@ export function isFuelStopSelection(value: unknown): value is FuelStopSelection 
 }
 
 /**
+ * Sanitizes one day's fuelStopsByDay entry loaded from Firestore into a
+ * clean array. fuelStopsByDay briefly stored a single nullable stop per day
+ * (or null) before it became an array of stops -- this accepts that older
+ * shape too (wrapping a lone valid stop, or treating anything else as no
+ * stops) instead of crashing when .filter is called on a non-array value.
+ */
+export function sanitizeFuelStops(value: unknown): FuelStopSelection[] {
+  if (Array.isArray(value)) return value.filter(isFuelStopSelection);
+  if (isFuelStopSelection(value)) return [value];
+  return [];
+}
+
+/**
  * Builds the full stop-by-stop itinerary for a driving day: departure, an
  * optional lunch stop (only if the user picked a specific restaurant from
  * the search-along-route results), any number of user-added fuel stops, an

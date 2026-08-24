@@ -14,8 +14,8 @@ import {
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
 import {
-  isFuelStopSelection,
   isLunchSelection,
+  sanitizeFuelStops,
   type FuelStopSelection,
   type LunchSelection,
 } from "@/lib/routeDays";
@@ -112,9 +112,7 @@ export default function DayDetailPage() {
   const rawChoice = trip.lunchChoicesByDay?.[dayIndex];
   const initialLunchChoice = isLunchSelection(rawChoice) ? rawChoice : null;
 
-  const initialFuelStops = (trip.fuelStopsByDay?.[dayIndex] ?? []).filter(
-    isFuelStopSelection
-  );
+  const initialFuelStops = sanitizeFuelStops(trip.fuelStopsByDay?.[dayIndex]);
 
   const vehicleId = trip.vehicleId ?? "";
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId) ?? null;
