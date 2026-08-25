@@ -3,6 +3,7 @@
 import {
   LUNCH_WINDOW_END,
   LUNCH_WINDOW_START,
+  metersToMiles,
   secondsAtDrivingFraction,
   timeStringToSeconds,
   type DayItineraryStop,
@@ -168,6 +169,43 @@ interface GasSearchResult {
   city: string | null;
 }
 
+// Google's "search along route" places search returns a small, sparse set
+// of stations for a single long polyline no matter how many are actually
+// out there -- running it separately per ~100mi chunk of the route (instead
+// of one call for the whole day) gets each chunk its own allocation of
+// results, surfacing far more cities. Segments overlap by one point at each
+// boundary so no stretch of road is left unsearched.
+const MILES_PER_GAS_SEARCH_SEGMENT = 100;
+const MAX_GAS_SEARCH_SEGMENTS = 6;
+
+function splitPathIntoSegments(
+  path: google.maps.LatLngLiteral[],
+  numSegments: number
+): google.maps.LatLngLiteral[][] {
+  if (numSegments <= 1 || path.length < 2) return [path];
+  const segments: google.maps.LatLngLiteral[][] = [];
+  const pointsPerSegment = (path.length - 1) / numSegments;
+  for (let i = 0; i < numSegments; i++) {
+    const startIndex = Math.floor(i * pointsPerSegment);
+    const endIndex = Math.floor((i + 1) * pointsPerSegment);
+    segments.push(path.slice(startIndex, endIndex + 1));
+  }
+  return segments;
+}
+
+async function fetchGasSegment(encodedPolyline: string): Promise<GasSearchResult[]> {
+  try {
+    const res = await fetch("/api/places/gas-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ encodedPolyline }),
+    });
+    return res.ok ? await res.json() : [];
+  } catch {
+    return [];
+  }
+}
+
 export interface CheapestGasStop {
   /** The cheapest city's name (not a single station's). */
   city: string;
@@ -197,18 +235,21 @@ export async function searchGasForDay(
   average: number | null;
   byCity: CheapestGasStop[];
 }> {
-  const encodedPolyline = geometryLibrary.encoding.encodePath(day.path);
-  let results: GasSearchResult[];
-  try {
-    const res = await fetch("/api/places/gas-search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ encodedPolyline }),
-    });
-    results = res.ok ? await res.json() : [];
-  } catch {
-    results = [];
-  }
+  const numSegments = Math.min(
+    MAX_GAS_SEARCH_SEGMENTS,
+    Math.max(1, Math.round(metersToMiles(day.distanceMeters) / MILES_PER_GAS_SEARCH_SEGMENT))
+  );
+  const encodedPolylines = splitPathIntoSegments(day.path, numSegments).map((segment) =>
+    geometryLibrary.encoding.encodePath(segment)
+  );
+  const segmentResults = await Promise.all(encodedPolylines.map(fetchGasSegment));
+
+  const seenPlaceIds = new Set<string>();
+  const results: GasSearchResult[] = segmentResults.flat().filter((r) => {
+    if (seenPlaceIds.has(r.placeId)) return false;
+    seenPlaceIds.add(r.placeId);
+    return true;
+  });
 
   if (results.length === 0) {
     return { cheapest: null, average: null, byCity: [] };

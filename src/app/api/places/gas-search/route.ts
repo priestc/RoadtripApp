@@ -28,6 +28,16 @@ interface TextSearchPlace {
   addressComponents?: AddressComponent[];
 }
 
+interface TextSearchResponse {
+  places?: TextSearchPlace[];
+  nextPageToken?: string;
+}
+
+// Search Along Route tends to return a small, sparse set of stations per
+// page even on long routes -- paging through a few more requests (up to 60
+// stations total) surfaces cities a single page misses.
+const MAX_PAGES = 3;
+
 export interface GasSearchResult {
   placeId: string;
   name: string;
@@ -102,32 +112,46 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
-        "X-Goog-FieldMask":
-          "places.id,places.displayName,places.location,places.fuelOptions,places.addressComponents",
-      },
-      body: JSON.stringify({
-        textQuery: "gas station",
-        maxResultCount: 20,
-        searchAlongRouteParameters: {
-          polyline: { encodedPolyline },
+    const places: TextSearchPlace[] = [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+          "X-Goog-FieldMask":
+            "places.id,places.displayName,places.location,places.fuelOptions,places.addressComponents,nextPageToken",
         },
-      }),
-    });
+        body: JSON.stringify({
+          textQuery: "gas station",
+          maxResultCount: 20,
+          pageToken,
+          searchAlongRouteParameters: {
+            polyline: { encodedPolyline },
+          },
+        }),
+      });
 
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: "Places search failed." },
-        { status: 502 }
-      );
+      if (!res.ok) {
+        if (page === 0) {
+          return NextResponse.json(
+            { error: "Places search failed." },
+            { status: 502 }
+          );
+        }
+        break;
+      }
+
+      const data: TextSearchResponse = await res.json();
+      places.push(...(data.places ?? []));
+      if (!data.nextPageToken) break;
+      pageToken = data.nextPageToken;
     }
 
-    const data: { places?: TextSearchPlace[] } = await res.json();
-    const results: GasSearchResult[] = (data.places ?? [])
+    const seen = new Set<string>();
+    const results: GasSearchResult[] = places
+      .filter((place) => (seen.has(place.id) ? false : (seen.add(place.id), true)))
       .map((place) => {
         const regular = place.fuelOptions?.fuelPrices?.find(
           (fp) => fp.type === "REGULAR_UNLEADED"
@@ -151,7 +175,15 @@ export async function POST(request: NextRequest) {
       .filter((result): result is GasSearchResult => result !== null);
 
     gasSearchCache.set(encodedPolyline, results);
-    return NextResponse.json(results);
+    // TEMP DEBUG -- remove once we've confirmed whether Google's sparse
+    // gas-search results are a candidate-volume problem or a price-coverage
+    // problem (most "gas station" places lack fuelOptions pricing).
+    return NextResponse.json(results, {
+      headers: {
+        "X-Debug-Raw-Places": String(places.length),
+        "X-Debug-Priced-Places": String(results.length),
+      },
+    });
   } catch {
     return NextResponse.json(
       { error: "Places search failed." },
