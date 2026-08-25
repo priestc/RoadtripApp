@@ -178,6 +178,9 @@ export async function POST(request: NextRequest) {
     // TEMP DEBUG -- remove once we've confirmed whether Google's sparse
     // gas-search results are a candidate-volume problem or a price-coverage
     // problem (most "gas station" places lack fuelOptions pricing).
+    console.log(
+      `[gas-search debug] raw=${places.length} priced=${results.length} polylineLen=${encodedPolyline.length}`
+    );
     return NextResponse.json(results, {
       headers: {
         "X-Debug-Raw-Places": String(places.length),
