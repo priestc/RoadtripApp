@@ -175,18 +175,7 @@ export async function POST(request: NextRequest) {
       .filter((result): result is GasSearchResult => result !== null);
 
     gasSearchCache.set(encodedPolyline, results);
-    // TEMP DEBUG -- remove once we've confirmed whether Google's sparse
-    // gas-search results are a candidate-volume problem or a price-coverage
-    // problem (most "gas station" places lack fuelOptions pricing).
-    console.log(
-      `[gas-search debug] raw=${places.length} priced=${results.length} polylineLen=${encodedPolyline.length}`
-    );
-    return NextResponse.json(results, {
-      headers: {
-        "X-Debug-Raw-Places": String(places.length),
-        "X-Debug-Priced-Places": String(results.length),
-      },
-    });
+    return NextResponse.json(results);
   } catch {
     return NextResponse.json(
       { error: "Places search failed." },
