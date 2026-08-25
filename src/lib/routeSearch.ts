@@ -389,6 +389,9 @@ export async function planAutomaticFuelStops(
   let currentRange = initialFuelRangeMiles;
   let exceededReserve = false;
 
+  const cheapestOf = (pool: Candidate[]): Candidate =>
+    pool.reduce((cheapest, c) => (c.avgPricePerGallon < cheapest.avgPricePerGallon ? c : cheapest));
+
   // At most one stop per candidate -- caps the loop even in a pathological
   // input (e.g. no candidates found at all).
   for (let iteration = 0; iteration < candidates.length + 1; iteration++) {
@@ -396,18 +399,33 @@ export async function planAutomaticFuelStops(
     if (remainingTripMiles <= currentRange - FUEL_RESERVE_MILES) break;
 
     const safeReachMiles = currentPosition + Math.max(0, currentRange - FUEL_RESERVE_MILES);
-    const reachable = candidates.filter(
+    // Real gas prices trend regionally rather than randomly, so simply
+    // taking the single cheapest station anywhere in the whole safe range
+    // tends to grab whatever's nearby the moment it's cheaper than
+    // everything further out -- producing a string of short hops instead of
+    // stops "roughly at half tank". Searching the back half of the tank
+    // first (extending to the reserve limit only if nothing qualifies
+    // there) is what actually produces that spacing while still preferring
+    // cheap stations and being willing to skip ahead past pricier ones.
+    const halfTankMark = currentPosition + currentRange / 2;
+    const backHalfWindowStart = Math.min(halfTankMark, safeReachMiles);
+    const backHalfReachable = candidates.filter(
+      (c) => c.absPositionMiles >= backHalfWindowStart && c.absPositionMiles <= safeReachMiles
+    );
+    const fullReachable = candidates.filter(
       (c) => c.absPositionMiles > currentPosition && c.absPositionMiles <= safeReachMiles
     );
 
     let picked: Candidate | undefined;
-    if (reachable.length > 0) {
-      picked = reachable.reduce((cheapest, c) =>
-        c.avgPricePerGallon < cheapest.avgPricePerGallon ? c : cheapest
-      );
+    if (backHalfReachable.length > 0) {
+      picked = cheapestOf(backHalfReachable);
+    } else if (fullReachable.length > 0) {
+      // Nothing past the half-tank mark -- take the cheapest of whatever's
+      // reachable before it rather than stranding the plan.
+      picked = cheapestOf(fullReachable);
     } else {
-      // Nothing cheap-and-safe in range -- stretching past the reserve to
-      // the nearest station beats stranding the plan entirely.
+      // Nothing cheap-and-safe in range at all -- stretching past the
+      // reserve to the nearest station beats stranding the plan entirely.
       picked = candidates
         .filter((c) => c.absPositionMiles > currentPosition)
         .sort((a, b) => a.absPositionMiles - b.absPositionMiles)[0];
