@@ -78,6 +78,8 @@ export default function DayMap({
   onLunchChoiceChange,
   initialFuelStops,
   onFuelStopsChange,
+  allFuelStopsByDay,
+  initialFuelRangeMiles,
   onBoundaryCitiesChange,
   onNumDaysChange,
   vehicle,
@@ -90,6 +92,8 @@ export default function DayMap({
   onLunchChoiceChange: (choice: LunchSelection | null) => void;
   initialFuelStops: FuelStopSelection[];
   onFuelStopsChange: (stops: FuelStopSelection[]) => void;
+  allFuelStopsByDay: FuelStopSelection[][];
+  initialFuelRangeMiles: number | null;
   onBoundaryCitiesChange?: (cities: { start: string | null; end: string | null }) => void;
   onNumDaysChange?: (numDays: number) => void;
   vehicle: TripVehicle | null;
@@ -113,6 +117,8 @@ export default function DayMap({
         onLunchChoiceChange={onLunchChoiceChange}
         initialFuelStops={initialFuelStops}
         onFuelStopsChange={onFuelStopsChange}
+        allFuelStopsByDay={allFuelStopsByDay}
+        initialFuelRangeMiles={initialFuelRangeMiles}
         onBoundaryCitiesChange={onBoundaryCitiesChange}
         onNumDaysChange={onNumDaysChange}
         vehicle={vehicle}
@@ -130,6 +136,8 @@ function DayMapInner({
   onLunchChoiceChange,
   initialFuelStops,
   onFuelStopsChange,
+  allFuelStopsByDay,
+  initialFuelRangeMiles,
   onBoundaryCitiesChange,
   onNumDaysChange,
   vehicle,
@@ -142,6 +150,8 @@ function DayMapInner({
   onLunchChoiceChange: (choice: LunchSelection | null) => void;
   initialFuelStops: FuelStopSelection[];
   onFuelStopsChange: (stops: FuelStopSelection[]) => void;
+  allFuelStopsByDay: FuelStopSelection[][];
+  initialFuelRangeMiles: number | null;
   onBoundaryCitiesChange?: (cities: { start: string | null; end: string | null }) => void;
   onNumDaysChange?: (numDays: number) => void;
   vehicle: TripVehicle | null;
@@ -242,9 +252,42 @@ function DayMapInner({
   // City whose "add fuel stop" popup is currently open, in Gas mode.
   const [openGasCity, setOpenGasCity] = useState<string | null>(null);
 
-  // Current fuel range, entered fresh on each visit to this day (not
-  // persisted -- it changes daily and isn't meaningful outside this page).
-  const [fuelRangeInput, setFuelRangeInput] = useState("");
+  // Range left in the tank at the start of this day, worked out by walking
+  // forward from the trip's initial range through every prior day's fuel
+  // stops -- each one assumed to be a full fill-up, per how the automatic
+  // fuel-stop planner (and the "fill to full" default elsewhere) already
+  // treats stops. Day 0 is just the trip's initial range as-is.
+  const startOfDayRangeMiles = useMemo(() => {
+    if (!days || !vehicle || initialFuelRangeMiles === null) return null;
+    const fullTankRangeMiles = vehicle.fuelCapacityGallons * vehicle.gasMileageMpg;
+    let range = initialFuelRangeMiles;
+    for (let i = 0; i < dayIndex; i++) {
+      const priorDay = days[i];
+      if (!priorDay) break;
+      const dayMiles = metersToMiles(priorDay.distanceMeters);
+      const stops = [...(allFuelStopsByDay[i] ?? [])].sort(
+        (a, b) => a.drivingFraction - b.drivingFraction
+      );
+      let prevMiles = 0;
+      for (const stop of stops) {
+        const stopMiles = stop.drivingFraction * dayMiles;
+        range -= stopMiles - prevMiles;
+        range = fullTankRangeMiles;
+        prevMiles = stopMiles;
+      }
+      range -= dayMiles - prevMiles;
+    }
+    return Math.max(0, range);
+  }, [days, vehicle, initialFuelRangeMiles, allFuelStopsByDay, dayIndex]);
+
+  // Current fuel range for this day -- defaults to startOfDayRangeMiles
+  // (worked out from the trip's fuel stops so far) but the user can always
+  // type over it; that override isn't persisted beyond this page visit,
+  // same as before.
+  const [fuelRangeOverride, setFuelRangeOverride] = useState<string | null>(null);
+  const fuelRangeInput =
+    fuelRangeOverride ??
+    (startOfDayRangeMiles !== null ? String(Math.round(startOfDayRangeMiles)) : "");
   const parsedFuelRange = Number(fuelRangeInput);
   const fuelRangeMiles =
     fuelRangeInput.trim() !== "" && !Number.isNaN(parsedFuelRange) && parsedFuelRange > 0
@@ -645,9 +688,14 @@ function DayMapInner({
             step={1}
             placeholder="e.g. 150"
             value={fuelRangeInput}
-            onChange={(e) => setFuelRangeInput(e.target.value)}
+            onChange={(e) => setFuelRangeOverride(e.target.value)}
             className="mt-1 w-36 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none"
           />
+          {fuelRangeOverride === null && startOfDayRangeMiles !== null && (
+            <p className="mt-1 text-xs text-slate-400">
+              Auto-filled from your fuel stops so far — edit if needed.
+            </p>
+          )}
           {fuelRangeMiles !== null && (
             <div className="mt-2 text-xs text-slate-600">
               <p>

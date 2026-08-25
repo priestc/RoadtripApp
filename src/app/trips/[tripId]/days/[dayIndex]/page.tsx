@@ -48,6 +48,14 @@ export default function DayDetailPage() {
     [trip, dayIndex]
   );
 
+  // Every day's fuel stops (not just this one) -- needed to work out what
+  // range is left in the tank by the time this day starts, walking forward
+  // from the trip's initial range through every prior day's stops.
+  const allFuelStopsByDay = useMemo(
+    () => trip?.fuelStopsByDay?.map(sanitizeFuelStops) ?? [],
+    [trip]
+  );
+
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
@@ -163,6 +171,8 @@ export default function DayDetailPage() {
           onLunchChoiceChange={handleLunchChoiceChange}
           initialFuelStops={initialFuelStops}
           onFuelStopsChange={handleFuelStopsChange}
+          allFuelStopsByDay={allFuelStopsByDay}
+          initialFuelRangeMiles={trip.currentFuelRangeMiles ?? null}
           onBoundaryCitiesChange={setBoundaryCities}
           onNumDaysChange={setTotalDays}
           vehicle={
