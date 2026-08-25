@@ -13,7 +13,11 @@ import {
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthProvider";
-import { isLunchSelection, sanitizeFuelStops } from "@/lib/routeDays";
+import {
+  isLunchSelection,
+  sanitizeFuelStops,
+  type FuelStopSelection,
+} from "@/lib/routeDays";
 import type { Trip, Vehicle } from "@/lib/types";
 import RouteMap from "./RouteMap";
 
@@ -116,6 +120,18 @@ export default function TripDetailPage() {
     });
   }
 
+  function handleAutoFuelStops(stopsByDay: FuelStopSelection[][]) {
+    if (!params.tripId) return;
+    // Wholesale replace -- each day's stops must be wrapped in an object
+    // since Firestore rejects an array nested directly inside another array
+    // (same shape as the per-day handleFuelStopsChange writes).
+    updateDoc(doc(getFirebaseDb(), "trips", params.tripId), {
+      fuelStopsByDay: stopsByDay.map((stops) => ({ stops })),
+    }).catch(() => {
+      // Non-critical — the map already reflects the new stops locally.
+    });
+  }
+
   function handleFuelRangeBlur() {
     if (!params.tripId) return;
     const parsed = Number(fuelRangeInput);
@@ -208,6 +224,7 @@ export default function TripDetailPage() {
           fuelRangeMiles={fuelRangeMiles}
           initialLunchChoices={lunchChoicesByDay}
           initialFuelStopsByDay={fuelStopsByDay}
+          onFuelStopsByDayChange={handleAutoFuelStops}
           vehicle={
             selectedVehicle
               ? {

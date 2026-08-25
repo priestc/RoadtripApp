@@ -1,12 +1,14 @@
 "use client";
 
 import {
+  FUEL_RESERVE_MILES,
   LUNCH_WINDOW_END,
   LUNCH_WINDOW_START,
   metersToMiles,
   secondsAtDrivingFraction,
   timeStringToSeconds,
   type DayItineraryStop,
+  type FuelStopSelection,
   type LunchSelection,
   type RouteDaySegment,
 } from "@/lib/routeDays";
@@ -301,5 +303,136 @@ export async function searchGasForDay(
   );
 
   return { cheapest, average, byCity };
+}
+
+export interface AutoFuelPlanVehicle {
+  gasMileageMpg: number;
+  fuelCapacityGallons: number;
+}
+
+export interface AutoFuelPlanResult {
+  /** One array of fuel stops per day, ready to replace that day's existing
+   * stops entirely. */
+  stopsByDay: FuelStopSelection[][];
+  /** True if at least one stop had to be placed beyond the safe
+   * (range - FUEL_RESERVE_MILES) window because no gas city was reachable
+   * within it -- i.e. the route's stations are sparser than the vehicle's
+   * range can comfortably cover. */
+  exceededReserve: boolean;
+}
+
+/**
+ * Plans fuel stops for an entire multi-day trip in one pass. Starting from
+ * `initialFuelRangeMiles` (whatever's already in the tank at departure), it
+ * repeatedly drives to the cheapest gas city reachable within the current
+ * tank's safe range (current range minus FUEL_RESERVE_MILES) -- skipping
+ * over pricier cities along the way -- assumes a full fill-up there, and
+ * repeats until the remaining trip distance fits in what's left in the
+ * tank. Landing "roughly at half tank" on average is an emergent property
+ * of this (gas cities tend to be reasonably evenly priced/spaced), not a
+ * separate target: the only hard rule is picking the cheapest city inside
+ * the current safe window, which sometimes means driving nearly the full
+ * safe range to reach one.
+ */
+export async function planAutomaticFuelStops(
+  geometryLibrary: google.maps.GeometryLibrary,
+  days: RouteDaySegment[],
+  dayHasDinner: boolean[],
+  vehicle: AutoFuelPlanVehicle,
+  initialFuelRangeMiles: number
+): Promise<AutoFuelPlanResult> {
+  interface Candidate {
+    city: string;
+    avgPricePerGallon: number;
+    lat: number;
+    lng: number;
+    secondsSinceMidnight: number;
+    dayIndex: number;
+    drivingFractionInDay: number;
+    absPositionMiles: number;
+  }
+
+  const dayStartMiles: number[] = [];
+  let cumulativeMiles = 0;
+  for (const day of days) {
+    dayStartMiles.push(cumulativeMiles);
+    cumulativeMiles += metersToMiles(day.distanceMeters);
+  }
+  const totalTripMiles = cumulativeMiles;
+
+  const byDayResults = await Promise.all(
+    days.map((day, i) => searchGasForDay(geometryLibrary, day, dayHasDinner[i]))
+  );
+
+  const candidates: Candidate[] = [];
+  byDayResults.forEach((result, dayIndex) => {
+    result.byCity.forEach((stop) => {
+      candidates.push({
+        city: stop.city,
+        avgPricePerGallon: stop.avgPricePerGallon,
+        lat: stop.lat,
+        lng: stop.lng,
+        secondsSinceMidnight: stop.secondsSinceMidnight,
+        dayIndex,
+        drivingFractionInDay: stop.drivingFraction,
+        absPositionMiles:
+          dayStartMiles[dayIndex] + stop.drivingFraction * metersToMiles(days[dayIndex].distanceMeters),
+      });
+    });
+  });
+  candidates.sort((a, b) => a.absPositionMiles - b.absPositionMiles);
+
+  const fullTankRangeMiles = vehicle.fuelCapacityGallons * vehicle.gasMileageMpg;
+
+  const chosen: Candidate[] = [];
+  let currentPosition = 0;
+  let currentRange = initialFuelRangeMiles;
+  let exceededReserve = false;
+
+  // At most one stop per candidate -- caps the loop even in a pathological
+  // input (e.g. no candidates found at all).
+  for (let iteration = 0; iteration < candidates.length + 1; iteration++) {
+    const remainingTripMiles = totalTripMiles - currentPosition;
+    if (remainingTripMiles <= currentRange - FUEL_RESERVE_MILES) break;
+
+    const safeReachMiles = currentPosition + Math.max(0, currentRange - FUEL_RESERVE_MILES);
+    const reachable = candidates.filter(
+      (c) => c.absPositionMiles > currentPosition && c.absPositionMiles <= safeReachMiles
+    );
+
+    let picked: Candidate | undefined;
+    if (reachable.length > 0) {
+      picked = reachable.reduce((cheapest, c) =>
+        c.avgPricePerGallon < cheapest.avgPricePerGallon ? c : cheapest
+      );
+    } else {
+      // Nothing cheap-and-safe in range -- stretching past the reserve to
+      // the nearest station beats stranding the plan entirely.
+      picked = candidates
+        .filter((c) => c.absPositionMiles > currentPosition)
+        .sort((a, b) => a.absPositionMiles - b.absPositionMiles)[0];
+      if (!picked) break; // no gas stations ahead at all
+      exceededReserve = true;
+    }
+
+    chosen.push(picked);
+    currentPosition = picked.absPositionMiles;
+    currentRange = fullTankRangeMiles;
+  }
+
+  const stopsByDay: FuelStopSelection[][] = days.map(() => []);
+  chosen.forEach((c) => {
+    stopsByDay[c.dayIndex].push({
+      city: c.city,
+      avgPricePerGallon: c.avgPricePerGallon,
+      lat: c.lat,
+      lng: c.lng,
+      drivingFraction: c.drivingFractionInDay,
+      secondsSinceMidnight: c.secondsSinceMidnight,
+    });
+  });
+  stopsByDay.forEach((stops) => stops.sort((a, b) => a.drivingFraction - b.drivingFraction));
+
+  return { stopsByDay, exceededReserve };
 }
 

@@ -33,6 +33,7 @@ import {
   extractCityName,
   mapMarkerLabel,
   markerPosition,
+  planAutomaticFuelStops,
   pointAtFraction,
 } from "@/lib/routeSearch";
 
@@ -68,6 +69,7 @@ export default function RouteMap({
   fuelRangeMiles,
   initialLunchChoices,
   initialFuelStopsByDay,
+  onFuelStopsByDayChange,
   vehicle,
 }: {
   tripId: string;
@@ -78,6 +80,7 @@ export default function RouteMap({
   fuelRangeMiles: number | null;
   initialLunchChoices?: Array<LunchSelection | null>;
   initialFuelStopsByDay?: Array<FuelStopSelection[]>;
+  onFuelStopsByDayChange: (stopsByDay: FuelStopSelection[][]) => void;
   vehicle: TripVehicle | null;
 }) {
   if (!GOOGLE_MAPS_API_KEY) {
@@ -99,6 +102,7 @@ export default function RouteMap({
         fuelRangeMiles={fuelRangeMiles}
         initialLunchChoices={initialLunchChoices}
         initialFuelStopsByDay={initialFuelStopsByDay}
+        onFuelStopsByDayChange={onFuelStopsByDayChange}
         vehicle={vehicle}
       />
     </APIProvider>
@@ -114,6 +118,7 @@ function RouteMapInner({
   fuelRangeMiles,
   initialLunchChoices,
   initialFuelStopsByDay,
+  onFuelStopsByDayChange,
   vehicle,
 }: {
   tripId: string;
@@ -124,11 +129,13 @@ function RouteMapInner({
   fuelRangeMiles: number | null;
   initialLunchChoices?: Array<LunchSelection | null>;
   initialFuelStopsByDay?: Array<FuelStopSelection[]>;
+  onFuelStopsByDayChange: (stopsByDay: FuelStopSelection[][]) => void;
   vehicle: TripVehicle | null;
 }) {
   const map = useMap();
   const routesLibrary = useMapsLibrary("routes");
   const geocodingLibrary = useMapsLibrary("geocoding");
+  const geometryLibrary = useMapsLibrary("geometry");
 
   const [leg, setLeg] = useState<google.maps.DirectionsLeg | null>(null);
   const [numDaysOverride, setNumDaysOverride] = useState<number | null>(null);
@@ -211,6 +218,44 @@ function RouteMapInner({
     () => days?.map((day) => hasDinnerStop(day.durationSeconds)) ?? null,
     [days]
   );
+
+  const [autoPlanning, setAutoPlanning] = useState(false);
+  const [autoPlanMessage, setAutoPlanMessage] = useState<string | null>(null);
+
+  const autoPlanDisabledReason = !days || !dayHasDinner || !geometryLibrary
+    ? "Loading route…"
+    : !vehicle
+      ? "Select a vehicle first"
+      : fuelRangeMiles === null
+        ? "Enter your current fuel range first"
+        : null;
+
+  async function handleAutoFuelStops() {
+    if (!days || !dayHasDinner || !geometryLibrary || !vehicle || fuelRangeMiles === null) {
+      return;
+    }
+    setAutoPlanning(true);
+    setAutoPlanMessage(null);
+    try {
+      const { stopsByDay, exceededReserve } = await planAutomaticFuelStops(
+        geometryLibrary,
+        days,
+        dayHasDinner,
+        vehicle,
+        fuelRangeMiles
+      );
+      onFuelStopsByDayChange(stopsByDay);
+      setAutoPlanMessage(
+        exceededReserve
+          ? "Done — a stop or two had to dip below the usual 30mi reserve because no cheaper station was reachable in time."
+          : "Done — fuel stops updated below."
+      );
+    } catch {
+      setAutoPlanMessage("Couldn't plan fuel stops — try again.");
+    } finally {
+      setAutoPlanning(false);
+    }
+  }
 
   // Lunch and fuel stops are both chosen on each day's own page now -- this
   // trip page only displays whatever was already saved there, never a
@@ -300,6 +345,24 @@ function RouteMapInner({
 
   return (
     <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleAutoFuelStops}
+          disabled={autoPlanDisabledReason !== null || autoPlanning}
+          title={autoPlanDisabledReason ?? undefined}
+          className="rounded-md border border-slate-700 bg-slate-700 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300"
+        >
+          {autoPlanning ? "Planning…" : "Automatically add fuel stops"}
+        </button>
+        {autoPlanDisabledReason && !autoPlanning && (
+          <span className="text-xs text-slate-400">{autoPlanDisabledReason}</span>
+        )}
+        {autoPlanMessage && (
+          <span className="text-xs text-slate-500">{autoPlanMessage}</span>
+        )}
+      </div>
+
       {maxDays !== null && numDays !== null && (
         <div className="flex items-center gap-2">
           <label htmlFor="num-days" className="text-sm font-medium text-slate-700">
