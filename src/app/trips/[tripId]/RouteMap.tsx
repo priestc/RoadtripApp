@@ -393,6 +393,12 @@ function RouteMapInner({
         {autoPlanMessage && (
           <span className="text-xs text-slate-500">{autoPlanMessage}</span>
         )}
+        <Link
+          href={`/trips/${tripId}/fuel-overview`}
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+        >
+          Fuel overview
+        </Link>
       </div>
 
       {maxDays !== null && numDays !== null && (

@@ -305,6 +305,34 @@ export async function searchGasForDay(
   return { cheapest, average, byCity };
 }
 
+/** Green for the cheapest price in the set, red for the priciest, and a
+ * hue-interpolated color in between for everything else. */
+export function gasPriceColor(price: number, min: number, max: number): string {
+  const fraction = max > min ? (price - min) / (max - min) : 0;
+  const hue = 120 - fraction * 120;
+  return `hsl(${hue}, 70%, 45%)`;
+}
+
+export interface TripGasStation extends CheapestGasStop {
+  dayIndex: number;
+}
+
+/** Every gas city found along the whole trip (every day's full byCity
+ * results, not just the ones picked as fuel stops), tagged with which day
+ * each one falls on -- the raw data behind the fuel overview map/table. */
+export async function searchGasForTrip(
+  geometryLibrary: google.maps.GeometryLibrary,
+  days: RouteDaySegment[],
+  dayHasDinner: boolean[]
+): Promise<TripGasStation[]> {
+  const byDayResults = await Promise.all(
+    days.map((day, i) => searchGasForDay(geometryLibrary, day, dayHasDinner[i]))
+  );
+  return byDayResults.flatMap((result, dayIndex) =>
+    result.byCity.map((stop) => ({ ...stop, dayIndex }))
+  );
+}
+
 export interface AutoFuelPlanVehicle {
   gasMileageMpg: number;
   fuelCapacityGallons: number;

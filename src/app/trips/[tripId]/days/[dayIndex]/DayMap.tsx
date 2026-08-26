@@ -30,6 +30,7 @@ import {
 } from "@/lib/routeDays";
 import {
   extractCityName,
+  gasPriceColor,
   mapMarkerLabel,
   markerPosition,
   planTripFuelUsage,
@@ -40,14 +41,6 @@ import {
 } from "@/lib/routeSearch";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-
-/** Green for the cheapest price in the set, red for the priciest, and a
- * hue-interpolated color in between for everything else. */
-function gasPriceColor(price: number, min: number, max: number): string {
-  const fraction = max > min ? (price - min) / (max - min) : 0;
-  const hue = 120 - fraction * 120;
-  return `hsl(${hue}, 70%, 45%)`;
-}
 
 /** Icon shown in the itinerary list's leftmost column for a given stop label. */
 function stopIcon(label: string): string {
