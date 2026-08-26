@@ -267,11 +267,14 @@ function DayMapInner({
   // Current fuel range for this day -- defaults to startOfDayRangeMiles
   // (worked out from the trip's fuel stops so far) but the user can always
   // type over it; that override isn't persisted beyond this page visit,
-  // same as before.
+  // same as before. Floored, not rounded -- a "partial fill to next cheaper
+  // stop" stop is deliberately calculated to leave exactly the reserve
+  // buffer at its target, so rounding up here could display a range that
+  // looks reachable by a hair when the precise figure actually isn't.
   const [fuelRangeOverride, setFuelRangeOverride] = useState<string | null>(null);
   const fuelRangeInput =
     fuelRangeOverride ??
-    (startOfDayRangeMiles !== null ? String(Math.round(startOfDayRangeMiles)) : "");
+    (startOfDayRangeMiles !== null ? String(Math.floor(startOfDayRangeMiles)) : "");
   const parsedFuelRange = Number(fuelRangeInput);
   const fuelRangeMiles =
     fuelRangeInput.trim() !== "" && !Number.isNaN(parsedFuelRange) && parsedFuelRange > 0
