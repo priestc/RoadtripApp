@@ -280,6 +280,28 @@ function RouteMapInner({
     return planTripFuelUsage(days, fuelStopsByDay, vehicle, fuelRangeMiles);
   }, [days, vehicle, fuelRangeMiles, fuelStopsByDay]);
 
+  // Gallon-weighted (not a plain average of each stop's price) since stops
+  // buy different amounts -- a cheap stop where you topped off from empty
+  // should count for more than a pricier one you only splashed a couple of
+  // gallons into to reach it.
+  const totalGallonsPurchased =
+    tripFuelPlan?.stops.reduce((sum, s) => sum + s.gallonsPurchased, 0) ?? 0;
+  const avgPricePaid =
+    tripFuelPlan && totalGallonsPurchased > 0
+      ? tripFuelPlan.totalFillUpCost / totalGallonsPurchased
+      : null;
+
+  // "What if gas had cost $X.XX the whole trip" calculator -- applies a
+  // single hypothetical price to the same total gallons actually purchased,
+  // for a direct comparison against totalFillUpCost.
+  const [whatIfPriceInput, setWhatIfPriceInput] = useState("");
+  const parsedWhatIfPrice = Number(whatIfPriceInput);
+  const whatIfPrice =
+    whatIfPriceInput.trim() !== "" && !Number.isNaN(parsedWhatIfPrice) && parsedWhatIfPrice > 0
+      ? parsedWhatIfPrice
+      : null;
+  const whatIfTotal = whatIfPrice !== null ? whatIfPrice * totalGallonsPurchased : null;
+
   // The full stop-by-stop itinerary (Departure/Lunch/Fuel/Dinner/Arrival,
   // each with a clock time and a driving-path fraction) for every day.
   // Shared by the geocoding effect, the map markers, and the day list below
@@ -621,7 +643,8 @@ function RouteMapInner({
                 <>
                   {" "}
                   Total fill-up cost across your planned stops: ~$
-                  {tripFuelPlan.totalFillUpCost.toFixed(2)}.
+                  {tripFuelPlan.totalFillUpCost.toFixed(2)}
+                  {avgPricePaid !== null && ` (avg $${avgPricePaid.toFixed(2)}/gal paid)`}.
                 </>
               )}
             </p>
@@ -629,6 +652,35 @@ function RouteMapInner({
             <p className="mt-1 text-slate-400">
               Select a vehicle above to estimate total fuel needed.
             </p>
+          )}
+
+          {tripFuelPlan && totalGallonsPurchased > 0 && (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <label
+                htmlFor="what-if-price"
+                className="flex flex-wrap items-center gap-2 text-slate-600"
+              >
+                What if gas cost
+                <input
+                  id="what-if-price"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="e.g. 3.50"
+                  value={whatIfPriceInput}
+                  onChange={(e) => setWhatIfPriceInput(e.target.value)}
+                  className="w-24 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none"
+                />
+                /gal for the whole trip?
+              </label>
+              {whatIfTotal !== null && (
+                <p className="mt-1 text-slate-600">
+                  That would be about{" "}
+                  <span className="font-semibold">${whatIfTotal.toFixed(2)}</span> total (
+                  {totalGallonsPurchased.toFixed(1)} gal).
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}
