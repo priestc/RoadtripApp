@@ -34,6 +34,7 @@ import {
   mapMarkerLabel,
   markerPosition,
   planAutomaticFuelStops,
+  planTripFuelUsage,
   pointAtFraction,
 } from "@/lib/routeSearch";
 
@@ -270,6 +271,15 @@ function RouteMapInner({
     return days.map((_, i) => initialFuelStopsByDay?.[i] ?? []);
   }, [days, initialFuelStopsByDay]);
 
+  // Estimated fuel spend for the trip -- each day's burned-fuel cost (shown
+  // atop its row below) and the total of every fill-up's actual purchase
+  // cost (shown in the "Fuel for this trip" summary). Needs a vehicle and a
+  // current fuel range, same as the automatic fuel-stop planner.
+  const tripFuelPlan = useMemo(() => {
+    if (!days || !vehicle || fuelRangeMiles === null || !fuelStopsByDay) return null;
+    return planTripFuelUsage(days, fuelStopsByDay, vehicle, fuelRangeMiles);
+  }, [days, vehicle, fuelRangeMiles, fuelStopsByDay]);
+
   // The full stop-by-stop itinerary (Departure/Lunch/Fuel/Dinner/Arrival,
   // each with a clock time and a driving-path fraction) for every day.
   // Shared by the geocoding effect, the map markers, and the day list below
@@ -496,7 +506,10 @@ function RouteMapInner({
                             metersToMiles(day.distanceMeters) / vehicle.gasMileageMpg;
                           const tankPercent =
                             (dayGallons / vehicle.fuelCapacityGallons) * 100;
-                          return `${dayGallons.toFixed(1)} gal (${tankPercent.toFixed(0)}% of tank)`;
+                          const dayCost = tripFuelPlan?.dayBurnedFuelCost[i];
+                          return `${dayGallons.toFixed(1)} gal (${tankPercent.toFixed(0)}% of tank)${
+                            dayCost != null ? ` · ~$${dayCost.toFixed(2)}` : ""
+                          }`;
                         })()}
                       </>
                     )}
@@ -604,6 +617,13 @@ function RouteMapInner({
               at {vehicle.gasMileageMpg} mpg. This is fuel for the entire
               trip&apos;s distance — it doesn&apos;t subtract whatever&apos;s
               already in the tank at the start.
+              {tripFuelPlan && tripFuelPlan.stops.length > 0 && (
+                <>
+                  {" "}
+                  Total fill-up cost across your planned stops: ~$
+                  {tripFuelPlan.totalFillUpCost.toFixed(2)}.
+                </>
+              )}
             </p>
           ) : (
             <p className="mt-1 text-slate-400">

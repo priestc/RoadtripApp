@@ -32,6 +32,7 @@ import {
   extractCityName,
   mapMarkerLabel,
   markerPosition,
+  planTripFuelUsage,
   pointAtFraction,
   searchGasForDay,
   searchLunchForDay,
@@ -254,30 +255,13 @@ function DayMapInner({
 
   // Range left in the tank at the start of this day, worked out by walking
   // forward from the trip's initial range through every prior day's fuel
-  // stops -- each one assumed to be a full fill-up, per how the automatic
-  // fuel-stop planner (and the "fill to full" default elsewhere) already
-  // treats stops. Day 0 is just the trip's initial range as-is.
+  // stops -- respecting each stop's actual fillStrategy (full vs. partial),
+  // same as the per-day fuelStopPlan below. Day 0 is just the trip's
+  // initial range as-is.
   const startOfDayRangeMiles = useMemo(() => {
     if (!days || !vehicle || initialFuelRangeMiles === null) return null;
-    const fullTankRangeMiles = vehicle.fuelCapacityGallons * vehicle.gasMileageMpg;
-    let range = initialFuelRangeMiles;
-    for (let i = 0; i < dayIndex; i++) {
-      const priorDay = days[i];
-      if (!priorDay) break;
-      const dayMiles = metersToMiles(priorDay.distanceMeters);
-      const stops = [...(allFuelStopsByDay[i] ?? [])].sort(
-        (a, b) => a.drivingFraction - b.drivingFraction
-      );
-      let prevMiles = 0;
-      for (const stop of stops) {
-        const stopMiles = stop.drivingFraction * dayMiles;
-        range -= stopMiles - prevMiles;
-        range = fullTankRangeMiles;
-        prevMiles = stopMiles;
-      }
-      range -= dayMiles - prevMiles;
-    }
-    return Math.max(0, range);
+    return planTripFuelUsage(days, allFuelStopsByDay, vehicle, initialFuelRangeMiles)
+      .startOfDayRangeMiles[dayIndex];
   }, [days, vehicle, initialFuelRangeMiles, allFuelStopsByDay, dayIndex]);
 
   // Current fuel range for this day -- defaults to startOfDayRangeMiles

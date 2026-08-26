@@ -454,3 +454,150 @@ export async function planAutomaticFuelStops(
   return { stopsByDay, exceededReserve };
 }
 
+export interface TripFuelPlanStop {
+  dayIndex: number;
+  city: string;
+  arrivalRangeMiles: number;
+  gallonsPurchased: number;
+  cost: number;
+  departureRangeMiles: number;
+}
+
+export interface TripFuelPlan {
+  stops: TripFuelPlanStop[];
+  /** Range left in the tank at the start of each day (index-aligned with
+   * `days`), simulated by walking every earlier fuel stop's actual
+   * fillStrategy -- day 0 is just `initialFuelRangeMiles` as-is. */
+  startOfDayRangeMiles: number[];
+  /** Estimated cost of the fuel burned driving each day, attributing every
+   * stretch of road to whichever fill-up's gas was in the tank at the time
+   * (the most recently purchased stop's price). null for a day where none
+   * of its driving happened on priced gas yet (i.e. entirely before the
+   * trip's first-ever fill-up, so there's no known price to attribute it
+   * to) -- a day that's only partially before the first fill-up still gets
+   * a (partial, underestimated) number rather than null. */
+  dayBurnedFuelCost: (number | null)[];
+  /** Sum of every stop's actual purchase cost (gallonsPurchased * price). */
+  totalFillUpCost: number;
+}
+
+/**
+ * Simulates fuel range and spend across the whole trip in one pass -- the
+ * trip-wide counterpart to DayMap's per-day fuelStopPlan, chaining across
+ * day boundaries instead of resetting at each one. Each stop's actual
+ * fillStrategy is respected (a "partial" fill only buys enough to reach the
+ * next cheaper stop, same as the per-day plan), using the next stop
+ * anywhere in the trip -- not just the same day -- to decide whether a
+ * cheaper one lies ahead.
+ */
+export function planTripFuelUsage(
+  days: RouteDaySegment[],
+  fuelStopsByDay: FuelStopSelection[][],
+  vehicle: AutoFuelPlanVehicle,
+  initialFuelRangeMiles: number
+): TripFuelPlan {
+  interface FlatStop {
+    dayIndex: number;
+    city: string;
+    avgPricePerGallon: number;
+    fillStrategy?: "full" | "partial";
+    absPositionMiles: number;
+  }
+
+  const dayStartMiles: number[] = [];
+  let cumulativeMiles = 0;
+  for (const day of days) {
+    dayStartMiles.push(cumulativeMiles);
+    cumulativeMiles += metersToMiles(day.distanceMeters);
+  }
+
+  const flatStops: FlatStop[] = [];
+  fuelStopsByDay.forEach((stops, dayIndex) => {
+    const dayMiles = metersToMiles(days[dayIndex]?.distanceMeters ?? 0);
+    stops.forEach((stop) => {
+      flatStops.push({
+        dayIndex,
+        city: stop.city,
+        avgPricePerGallon: stop.avgPricePerGallon,
+        fillStrategy: stop.fillStrategy,
+        absPositionMiles: dayStartMiles[dayIndex] + stop.drivingFraction * dayMiles,
+      });
+    });
+  });
+  flatStops.sort((a, b) => a.absPositionMiles - b.absPositionMiles);
+
+  const fullTankRangeMiles = vehicle.fuelCapacityGallons * vehicle.gasMileageMpg;
+
+  const startOfDayRangeMiles: number[] = new Array(days.length).fill(0);
+  const dayBurnedFuelCost: (number | null)[] = new Array(days.length).fill(null);
+  const dayHasPricedMiles: boolean[] = new Array(days.length).fill(false);
+  const stopResults: TripFuelPlanStop[] = [];
+
+  let range = initialFuelRangeMiles;
+  let currentPricePerGallon: number | null = null;
+
+  days.forEach((day, dayIndex) => {
+    startOfDayRangeMiles[dayIndex] = Math.max(0, range);
+    let dayCost = 0;
+    let prevPosition = dayStartMiles[dayIndex];
+    const dayMiles = metersToMiles(day.distanceMeters);
+
+    const consumeSegment = (toPosition: number) => {
+      const segmentMiles = toPosition - prevPosition;
+      range -= segmentMiles;
+      if (currentPricePerGallon !== null) {
+        dayCost += (segmentMiles / vehicle.gasMileageMpg) * currentPricePerGallon;
+        dayHasPricedMiles[dayIndex] = true;
+      }
+      prevPosition = toPosition;
+    };
+
+    const thisDayStops = flatStops.filter((s) => s.dayIndex === dayIndex);
+    thisDayStops.forEach((stop) => {
+      consumeSegment(stop.absPositionMiles);
+
+      const arrivalRangeMiles = range;
+      const gallonsRemaining = Math.max(0, arrivalRangeMiles) / vehicle.gasMileageMpg;
+      const next = flatStops[flatStops.indexOf(stop) + 1];
+      const cheaperAhead = !!next && next.avgPricePerGallon < stop.avgPricePerGallon;
+      const chosenStrategy: "full" | "partial" =
+        cheaperAhead && stop.fillStrategy !== "full" ? "partial" : "full";
+
+      let gallonsPurchased: number;
+      let departureRangeMiles: number;
+      if (chosenStrategy === "partial" && next) {
+        const milesToNext = next.absPositionMiles - stop.absPositionMiles;
+        const gallonsNeeded = Math.min(
+          vehicle.fuelCapacityGallons,
+          (milesToNext + FUEL_RESERVE_MILES) / vehicle.gasMileageMpg
+        );
+        gallonsPurchased = Math.max(0, gallonsNeeded - gallonsRemaining);
+        departureRangeMiles = (gallonsRemaining + gallonsPurchased) * vehicle.gasMileageMpg;
+      } else {
+        gallonsPurchased = Math.max(0, vehicle.fuelCapacityGallons - gallonsRemaining);
+        departureRangeMiles = fullTankRangeMiles;
+      }
+      const cost = gallonsPurchased * stop.avgPricePerGallon;
+
+      stopResults.push({
+        dayIndex,
+        city: stop.city,
+        arrivalRangeMiles,
+        gallonsPurchased,
+        cost,
+        departureRangeMiles,
+      });
+
+      range = departureRangeMiles;
+      currentPricePerGallon = stop.avgPricePerGallon;
+    });
+
+    consumeSegment(dayStartMiles[dayIndex] + dayMiles);
+    dayBurnedFuelCost[dayIndex] = dayHasPricedMiles[dayIndex] ? dayCost : null;
+  });
+
+  const totalFillUpCost = stopResults.reduce((sum, r) => sum + r.cost, 0);
+
+  return { stops: stopResults, startOfDayRangeMiles, dayBurnedFuelCost, totalFillUpCost };
+}
+
